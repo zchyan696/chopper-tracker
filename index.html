@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AMEN TRACKER</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+    <header id="toolbar">
+        <div class="logo">▓ AMEN TRACKER</div>
+        <div class="ctrl-group">
+            <span class="lbl">BPM</span>
+            <input type="number" id="bpm" value="174" min="40" max="300">
+            <span class="lbl">LPB</span>
+            <input type="number" id="lpb" value="4" min="1" max="16">
+            <span class="lbl">STEPS</span>
+            <select id="steps">
+                <option value="16">16</option>
+                <option value="32" selected>32</option>
+                <option value="64">64</option>
+            </select>
+            <span class="lbl">TRACKS</span>
+            <select id="num-tracks">
+                <option value="2">2</option>
+                <option value="4" selected>4</option>
+                <option value="6">6</option>
+            </select>
+        </div>
+        <div class="ctrl-group">
+            <button id="btn-play">▶ PLAY</button>
+            <button id="btn-stop">■ STOP</button>
+            <button id="btn-export">↓ WAV</button>
+        </div>
+        <div id="vol-group" class="ctrl-group">
+            <span class="lbl">VOL</span>
+            <input type="range" id="master-vol" min="0" max="100" value="90">
+            <span id="vol-val">90%</span>
+        </div>
+        <div class="ctrl-group">
+            <span class="lbl">SWING</span>
+            <input type="range" id="swing" min="0" max="50" value="0">
+            <span id="swing-val">0%</span>
+        </div>
+    </header>
+
+    <div id="main">
+        <aside id="panel-left">
+            <div id="panel-tabs">
+                <button class="tab-btn active" data-tab="sample">SAMPLE</button>
+                <button class="tab-btn" data-tab="kits">KITS</button>
+            </div>
+
+            <!-- SAMPLE TAB -->
+            <div id="tab-sample" class="tab-content">
+                <div id="dropzone">
+                    <div class="drop-text">DROP SAMPLE<br><span>or click to open</span></div>
+                    <input type="file" id="file-input" accept="audio/*">
+                </div>
+                <div id="sample-name"></div>
+
+                <div id="wf-mini-wrap">
+                    <canvas id="waveform"></canvas>
+                    <button id="btn-wf-expand" title="Abrir editor fullscreen">⤢</button>
+                </div>
+                <div id="wf-hints">scroll=zoom · drag=pan · click=add · drag linha=mover · right-click linha=remover</div>
+
+                <div id="slice-toolbar">
+                    <button id="btn-auto-slice" disabled>AUTO SLICE</button>
+                    <div class="slice-param">
+                        <span class="lbl">SENS</span>
+                        <input type="range" id="sensitivity" min="1" max="10" value="5">
+                        <span id="sens-val">5</span>
+                    </div>
+                    <button id="btn-clear-slices" disabled>CLEAR</button>
+                </div>
+                <div id="timing-info"></div>
+                <div id="slice-count">nenhum sample</div>
+                <button id="btn-fill-break" disabled style="width:100%;margin-top:2px">▶▶ FILL BREAK</button>
+                <div id="slice-legend"></div>
+
+                <div id="fx-help">
+                    <div class="fx-title">FX COMMANDS</div>
+                    <div class="fx-row"><span class="fx-code">Rxx</span><span>Retrigger xx vezes</span></div>
+                    <div class="fx-row"><span class="fx-code">Bxx</span><span>Reverse slice</span></div>
+                    <div class="fx-row"><span class="fx-code">Pxx</span><span>Pitch +xx semitons</span></div>
+                    <div class="fx-row"><span class="fx-code">P-x</span><span>Pitch -x semitons</span></div>
+                    <div class="fx-title" style="margin-top:8px">NOTE INPUT</div>
+                    <div class="fx-row"><span class="fx-code">Z S X D C V G B H N J M</span><span>slices 0–11</span></div>
+                    <div class="fx-row"><span class="fx-code">Q 2 W 3 E R 5 T 6 Y 7 U</span><span>slices 12–23</span></div>
+                    <div class="fx-row"><span class="fx-code">]</span><span>Note OFF — corta o som</span></div>
+                    <div class="fx-row"><span class="fx-code">F1 / F2</span><span>Oitava −1 / +1</span></div>
+                </div>
+            </div>
+
+            <!-- KITS TAB -->
+            <div id="tab-kits" class="tab-content hidden">
+                <div id="kits-panel">
+                    <input type="text" id="kits-search" placeholder="filter samples..." spellcheck="false">
+                    <div id="kits-status">abrindo pasta kits...</div>
+                    <ul id="kits-list"></ul>
+                    <div id="kits-hint">click=preview · double-click=load · <span id="btn-change-folder" style="cursor:pointer;color:#4a90d9">trocar pasta</span></div>
+                </div>
+            </div>
+        </aside>
+
+        <section id="panel-tracker">
+            <div id="tracker-scroll">
+                <table id="tracker-table">
+                    <thead id="tracker-head"></thead>
+                    <tbody id="tracker-body"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- ── WAVEFORM FULLSCREEN MODAL ── -->
+<div id="wf-modal" class="hidden">
+    <div id="wf-modal-bar">
+        <span id="wf-modal-title">WAVEFORM EDITOR</span>
+        <div id="wf-modal-controls">
+            <span id="wf-modal-info"></span>
+            <button id="wf-modal-zoom-reset">1:1</button>
+            <button id="wf-modal-auto-slice">AUTO SLICE</button>
+            <button id="wf-modal-fill">▶▶ FILL BREAK</button>
+            <button id="wf-modal-close">✕ FECHAR  [ESC]</button>
+        </div>
+    </div>
+    <canvas id="wf-canvas-big"></canvas>
+    <div id="wf-modal-hints">
+        scroll = zoom &nbsp;·&nbsp; drag = pan &nbsp;·&nbsp; click fundo = add slice &nbsp;·&nbsp;
+        click linha = preview &nbsp;·&nbsp; arrastar linha = mover &nbsp;·&nbsp;
+        right-click linha = remover &nbsp;·&nbsp; ESC = fechar
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
