@@ -1,9 +1,10 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// STATE
-// ─────────────────────────────────────────────────────────────────────────────
 const NOTE_NAMES  = ['C-','C#','D-','D#','E-','F-','F#','G-','G#','A-','A#','B-'];
 const BASE_OCTAVE = 4;
 const SLICE_KEYS  = ['Z','S','X','D','C','V','G','B','H','N','J','M','Q','2','W','3','E','R','5','T','6','Y','7','U'];
+
+let _trackMuted        = [false,false,false,false,false,false];
+let _savedSampleName   = '';
+let _pendingSliceFracs = null;
 
 function noteToSliceIndex(note) {
     if (!note || note === '---' || note === 'OFF') return -1;
@@ -27,20 +28,58 @@ function makePattern(steps, trks) { return Array.from({ length: steps }, () => m
 
 const state = {
     bpm: 174, lpb: 4, numSteps: 32, numTracks: 4,
-    swing: 0,   // 0–50  (% of step duration added to odd steps)
+    swing: 0,
     pattern: null, slices: [], audioBuffer: null,
 };
 state.pattern = makePattern(state.numSteps, state.numTracks);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AUDIO ENGINE
-// ─────────────────────────────────────────────────────────────────────────────
+function stateSave() {
+    try {
+        const totalLen = state.audioBuffer?.length || 1;
+        localStorage.setItem('amen-tracker-v1', JSON.stringify({
+            bpm: state.bpm, lpb: state.lpb, numSteps: state.numSteps,
+            numTracks: state.numTracks, swing: state.swing,
+            pattern: state.pattern,
+            muted: _trackMuted.slice(0, state.numTracks),
+            sampleName: document.getElementById('sample-name').textContent.replace(/^⟳ /,''),
+            slices: state.slices.map(s => ({ sf: s.start/totalLen, ef: s.end/totalLen, note: s.note })),
+        }));
+    } catch(_) {}
+}
+
+function stateLoad() {
+    try {
+        const raw = localStorage.getItem('amen-tracker-v1');
+        if (!raw) return false;
+        const d = JSON.parse(raw);
+        state.bpm       = d.bpm      ?? 174;
+        state.lpb       = d.lpb      ?? 4;
+        state.numSteps  = d.numSteps ?? 32;
+        state.numTracks = d.numTracks?? 4;
+        state.swing     = d.swing    ?? 0;
+        if (d.pattern?.length === state.numSteps && d.pattern[0]?.length === state.numTracks)
+            state.pattern = d.pattern;
+        else
+            state.pattern = makePattern(state.numSteps, state.numTracks);
+        if (Array.isArray(d.muted)) d.muted.forEach((v,i) => { _trackMuted[i] = !!v; });
+        _savedSampleName   = d.sampleName || '';
+        _pendingSliceFracs = d.slices?.length ? d.slices : null;
+        document.getElementById('bpm').value        = state.bpm;
+        document.getElementById('lpb').value        = state.lpb;
+        document.getElementById('steps').value      = state.numSteps;
+        document.getElementById('num-tracks').value = state.numTracks;
+        document.getElementById('swing').value      = state.swing;
+        document.getElementById('swing-val').textContent = state.swing + '%';
+        if (_savedSampleName)
+            document.getElementById('sample-name').textContent = '⟳ ' + _savedSampleName;
+        return true;
+    } catch(_) { return false; }
+}
+
 let _audioCtx   = null;
 let _masterGain = null;
 let _masterVol  = 0.9;
-
-// track the last scheduled source per track for Note OFF
-const _lastSrc = {};   // { trackIdx: AudioBufferSourceNode }
+const _lastSrc  = {};
 
 function getCtx() {
     if (!_audioCtx) {
@@ -71,7 +110,7 @@ function extractSliceBuffer(sliceIndex, reverse) {
 }
 
 function playSliceAt(sliceIndex, opts, startTime, trackIdx) {
-    const { vol = 1, pitchSemi = 0, reverse = false } = opts || {};
+    const { vol = 1, pitchSemi = 0, reverse = false, sampleOffset = 0, cutTime = 0 } = opts || {};
     const ac       = getCtx();
     const sliceBuf = extractSliceBuffer(sliceIndex, reverse);
     if (!sliceBuf) return null;
@@ -82,12 +121,13 @@ function playSliceAt(sliceIndex, opts, startTime, trackIdx) {
     gain.gain.value = Math.max(0, Math.min(2, vol));
     src.connect(gain);
     gain.connect(_masterGain);
-    src.start(startTime);
+    const offset = Math.max(0, Math.min(sampleOffset, sliceBuf.duration - 0.001));
+    src.start(startTime, offset);
+    if (cutTime > 0) src.stop(startTime + cutTime);
     if (trackIdx !== undefined) _lastSrc[trackIdx] = src;
     return src;
 }
 
-// Stop the last scheduled source for a track (Note OFF)
 function stopTrack(trackIdx, audioTime) {
     const src = _lastSrc[trackIdx];
     if (src) {
@@ -98,30 +138,32 @@ function stopTrack(trackIdx, audioTime) {
 
 function scheduleCell(cell, stepDuration, audioTime, trackIdx) {
     if (!cell) return;
-
-    // Note OFF — cut previous sound on this track
-    if (cell.note === 'OFF') {
-        stopTrack(trackIdx, audioTime);
-        return;
-    }
-
+    if (_trackMuted[trackIdx]) return;
+    if (cell.note === 'OFF') { stopTrack(trackIdx, audioTime); return; }
     if (!cell.note) return;
     const si = noteToSliceIndex(cell.note);
     if (si < 0 || si >= state.slices.length) return;
 
-    const vol       = (cell.vol ?? 0xff) / 0xff;
-    let pitchSemi   = 0, reverse = false, retrigger = 1;
+    const vol = (cell.vol ?? 0xff) / 0xff;
+    let pitchSemi = 0, reverse = false, retrigger = 1, sampleOffset = 0, cutTime = 0;
     if (cell.fx) {
-        if (cell.fx.type === 'P') pitchSemi = cell.fx.value;
+        const v = cell.fx.value;
+        if (cell.fx.type === 'P') pitchSemi = v;
         if (cell.fx.type === 'B') reverse   = true;
-        if (cell.fx.type === 'R') retrigger = Math.max(1, cell.fx.value);
+        if (cell.fx.type === 'R') retrigger = Math.max(1, v);
+        if (cell.fx.type === 'S') {
+            const sl = state.slices[si];
+            sampleOffset = (v / 0xff) * (sl.end - sl.start) / state.audioBuffer.sampleRate;
+        }
+        if (cell.fx.type === 'C') cutTime = (v / 0xff) * stepDuration;
     }
+    const opts = { vol, pitchSemi, reverse, sampleOffset, cutTime };
     if (retrigger > 1) {
         const iv = stepDuration / retrigger;
         for (let i = 0; i < retrigger; i++)
-            playSliceAt(si, { vol, pitchSemi, reverse }, audioTime + i * iv, trackIdx);
+            playSliceAt(si, opts, audioTime + i * iv, trackIdx);
     } else {
-        playSliceAt(si, { vol, pitchSemi, reverse }, audioTime, trackIdx);
+        playSliceAt(si, opts, audioTime, trackIdx);
     }
 }
 
@@ -130,18 +172,14 @@ function previewSlice(si) {
     playSliceAt(si, { vol: 1 }, ac.currentTime);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SLICER
-// ─────────────────────────────────────────────────────────────────────────────
 function detectTransients(buffer, sensitivity) {
     const data   = buffer.getChannelData(0);
     const sr     = buffer.sampleRate;
-    const hop    = Math.floor(sr * 0.004);          // 4ms hop
-    const minGap = Math.floor(sr * 0.040);          // 40ms min between hits
+    const hop    = Math.floor(sr * 0.004);
+    const minGap = Math.floor(sr * 0.040);
     const points = [0];
 
-    // energy envelope per hop
-    const N = Math.floor(data.length / hop);
+    const N      = Math.floor(data.length / hop);
     const energy = new Float32Array(N);
     for (let i = 0; i < N; i++) {
         let sum = 0;
@@ -151,24 +189,18 @@ function detectTransients(buffer, sensitivity) {
         energy[i] = Math.sqrt(sum / (end - base));
     }
 
-    // adaptive threshold: local mean over ~120ms window
     const bgWin = Math.ceil(0.12 * sr / hop);
-    const scale = 1.2 + (10 - sensitivity) * 0.18;  // sens=10→1.2×, sens=1→2.8×
+    const scale = 1.2 + (10 - sensitivity) * 0.18;
     let lastPoint = 0;
 
     for (let i = 2; i < N; i++) {
-        const pos = i * hop;
+        const pos  = i * hop;
         if (pos - lastPoint < minGap) continue;
-
-        // positive flux: how much did energy jump vs previous frame
         const flux = Math.max(0, energy[i] - energy[i - 1]);
-
-        // local background (trailing mean)
         let bg = 0;
         const s = Math.max(0, i - bgWin);
         for (let k = s; k < i; k++) bg += energy[k];
         bg /= (i - s);
-
         if (energy[i] > 0.005 && flux > bg * scale) {
             points.push(pos);
             lastPoint = pos;
@@ -178,10 +210,11 @@ function detectTransients(buffer, sensitivity) {
 }
 
 function buildSlices(framePositions, totalFrames) {
-    const pts  = [...new Set(framePositions)].sort((a, b) => a - b);
+    const pts = [...new Set(framePositions)].sort((a, b) => a - b);
     state.slices = pts.map((start, i) => ({
         start, end: pts[i + 1] ?? totalFrames, note: sliceIndexToNote(i),
     }));
+    stateSave();
 }
 
 function addManualSlice(normX) {
@@ -193,15 +226,11 @@ function addManualSlice(normX) {
     buildSlices(existing, state.audioBuffer.length);
 }
 
-// Detect BPM from filename (e.g. "cw_amen01_175.wav" → 175)
 function bpmFromFilename(name) {
     const nums = (name.match(/\d+/g) || []).map(Number).filter(n => n >= 60 && n <= 300);
     return nums.length ? nums[nums.length - 1] : null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SEQUENCER
-// ─────────────────────────────────────────────────────────────────────────────
 const SEQ_LOOKAHEAD = 0.12;
 const SEQ_TICK_MS   = 25;
 
@@ -212,11 +241,9 @@ function seqStepDur() { return 60 / (state.bpm * state.lpb); }
 function seqTick() {
     const ac = getCtx();
     while (_seqNextTime < ac.currentTime + SEQ_LOOKAHEAD) {
-        const dur    = seqStepDur();
-        // Swing: odd steps play slightly later (% of step duration)
-        const swing  = (_seqStep % 2 === 1) ? dur * (state.swing / 100) : 0;
+        const dur   = seqStepDur();
+        const swing = (_seqStep % 2 === 1) ? dur * (state.swing / 100) : 0;
         const playAt = _seqNextTime + swing;
-
         for (let t = 0; t < state.numTracks; t++)
             scheduleCell(state.pattern[_seqStep]?.[t], dur, playAt, t);
         if (_seqOnStep) _seqOnStep(_seqStep);
@@ -243,20 +270,15 @@ function seqStop() {
     if (_seqOnStep) _seqOnStep(-1);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WAVEFORM UI  — mini sidebar + fullscreen modal
-// ─────────────────────────────────────────────────────────────────────────────
 let _wfSmall, _wfSmallCtx;
 let _wfBig,   _wfBigCtx;
 let _wfModalOpen = false;
+let _wfZoom      = 1;
+let _wfOffset    = 0;
+let _wfDrag      = null;
+let _wfMoved     = false;
 
-let _wfZoom   = 1;
-let _wfOffset = 0;
-let _wfDrag   = null;
-let _wfMoved  = false;
-
-// ── helpers (use active canvas) ───────────────────────────────────────────────
-function wfAC()  { return _wfModalOpen ? _wfBig  : _wfSmall; }
+function wfAC()  { return _wfModalOpen ? _wfBig    : _wfSmall; }
 function wfACx() { return _wfModalOpen ? _wfBigCtx : _wfSmallCtx; }
 
 function wfClampOffset(o) { return Math.max(0, Math.min(1 - 1 / _wfZoom, o)); }
@@ -282,18 +304,15 @@ function wfNearSlice(px, thresh) {
     return best;
 }
 
-// ── draw on a specific canvas ─────────────────────────────────────────────────
 function wfDrawOn(canvas, ctx) {
     const W = canvas.width  = canvas.offsetWidth  || 600;
     const H = canvas.height = canvas.offsetHeight || 200;
     ctx.clearRect(0, 0, W, H);
-
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, W, H);
 
-    // centre line
     ctx.strokeStyle = '#1e1e1e';
-    ctx.lineWidth = 1;
+    ctx.lineWidth   = 1;
     ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
 
     if (!state.audioBuffer) {
@@ -302,16 +321,15 @@ function wfDrawOn(canvas, ctx) {
         return;
     }
 
-    const data    = state.audioBuffer.getChannelData(0);
-    const total   = data.length;
-    const mid     = H / 2;
+    const data     = state.audioBuffer.getChannelData(0);
+    const total    = data.length;
+    const mid      = H / 2;
     const visStart = Math.floor(_wfOffset * total);
     const visEnd   = Math.min(total, Math.ceil((_wfOffset + 1 / _wfZoom) * total));
     const visLen   = visEnd - visStart;
     const stride   = Math.max(1, Math.floor(visLen / W));
 
-    // ── collect peaks per pixel ───────────────────────────────────────────────
-    const peaks = new Float32Array(W * 2); // [min0, max0, min1, max1, ...]
+    const peaks = new Float32Array(W * 2);
     for (let px = 0; px < W; px++) {
         const i0 = visStart + Math.floor((px / W) * visLen);
         let mn = 0, mx = 0;
@@ -323,39 +341,30 @@ function wfDrawOn(canvas, ctx) {
         peaks[px * 2 + 1] = mx;
     }
 
-    // ── draw filled waveform (white like Renoise) ─────────────────────────────
     ctx.beginPath();
-    // top silhouette left → right
     ctx.moveTo(0, mid);
     for (let px = 0; px < W; px++) ctx.lineTo(px, mid + peaks[px*2+1] * mid * 0.95);
-    // bottom silhouette right → left
     for (let px = W - 1; px >= 0; px--) ctx.lineTo(px, mid + peaks[px*2] * mid * 0.95);
     ctx.closePath();
     ctx.fillStyle = 'rgba(220,220,220,0.9)';
     ctx.fill();
 
-    // ── slice markers (bright orange, thick) ─────────────────────────────────
     state.slices.forEach((sl, i) => {
         const norm = sl.start / total;
         if (norm < _wfOffset - 0.001 || norm > _wfOffset + 1 / _wfZoom + 0.001) return;
-        const x = (norm - _wfOffset) * _wfZoom * W;
-
+        const x          = (norm - _wfOffset) * _wfZoom * W;
         const isDragging = _wfDrag?.type === 'slice' && _wfDrag.sliceIdx === i;
-        ctx.strokeStyle = isDragging ? '#ffffff' : (i === 0 ? '#885500' : '#ff7700');
-        ctx.lineWidth   = isDragging ? 3 : (i === 0 ? 1 : 2);
+        ctx.strokeStyle  = isDragging ? '#ffffff' : (i === 0 ? '#885500' : '#ff7700');
+        ctx.lineWidth    = isDragging ? 3 : (i === 0 ? 1 : 2);
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-
-        // number label
         if (i > 0) {
-            ctx.fillStyle  = isDragging ? '#fff' : '#ff7700';
-            ctx.font       = `bold ${Math.min(11, Math.max(9, H/15))}px Courier New`;
-            ctx.textAlign  = 'left';
-            const label    = SLICE_KEYS[i] ? `${i} [${SLICE_KEYS[i]}]` : String(i);
-            ctx.fillText(label, x + 3, 14);
+            ctx.fillStyle = isDragging ? '#fff' : '#ff7700';
+            ctx.font      = `bold ${Math.min(11, Math.max(9, H/15))}px Courier New`;
+            ctx.textAlign = 'left';
+            ctx.fillText(SLICE_KEYS[i] ? `${i} [${SLICE_KEYS[i]}]` : String(i), x + 3, 14);
         }
     });
 
-    // ── pattern end line ──────────────────────────────────────────────────────
     const endNorm = (state.numSteps * seqStepDur()) / state.audioBuffer.duration;
     const endX    = (endNorm - _wfOffset) * _wfZoom * W;
     if (endX >= 0 && endX <= W) {
@@ -363,24 +372,22 @@ function wfDrawOn(canvas, ctx) {
         ctx.setLineDash([6, 4]); ctx.lineWidth = 2; ctx.strokeStyle = color;
         ctx.beginPath(); ctx.moveTo(endX, 0); ctx.lineTo(endX, H); ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = color; ctx.font = '9px Courier New'; ctx.textAlign = endX > W - 40 ? 'right' : 'left';
+        ctx.fillStyle = color; ctx.font = '9px Courier New';
+        ctx.textAlign = endX > W - 40 ? 'right' : 'left';
         ctx.fillText('END', endX + (endX > W - 40 ? -4 : 4), H - 5);
     }
 
-    // ── zoom level ────────────────────────────────────────────────────────────
     if (_wfZoom > 1) {
         ctx.fillStyle = '#444'; ctx.font = '9px Courier New'; ctx.textAlign = 'right';
         ctx.fillText(`${_wfZoom.toFixed(1)}×`, W - 4, H - 5);
     }
 }
 
-// draw on both canvases
 function wfDraw() {
     wfDrawOn(_wfSmall, _wfSmallCtx);
     if (_wfModalOpen) wfDrawOn(_wfBig, _wfBigCtx);
 }
 
-// ── attach interactions to a canvas ───────────────────────────────────────────
 function wfAttachEvents(canvas) {
     canvas.addEventListener('wheel', e => {
         e.preventDefault();
@@ -418,13 +425,12 @@ function wfAttachEvents(canvas) {
             const norm  = _wfOffset + (px / (canvas.offsetWidth || 1)) / _wfZoom;
             const frame = Math.floor(norm * state.audioBuffer.length);
             let nearest = 0, minDist = Infinity;
-            state.slices.forEach((sl, i) => { const d=Math.abs(sl.start-frame); if(d<minDist){minDist=d;nearest=i;} });
+            state.slices.forEach((sl, i) => { const d = Math.abs(sl.start - frame); if (d < minDist) { minDist = d; nearest = i; } });
             previewSlice(nearest);
         }
     });
 }
 
-// global mousemove + mouseup
 window.addEventListener('mousemove', e => {
     if (!_wfDrag || !state.audioBuffer) return;
     const canvas = _wfDrag.canvas || wfAC();
@@ -490,10 +496,7 @@ function wfInit() {
     wfAttachEvents(_wfSmall);
     wfAttachEvents(_wfBig);
 
-    // expand button
     document.getElementById('btn-wf-expand').addEventListener('click', wfOpenModal);
-
-    // modal controls
     document.getElementById('wf-modal-close').addEventListener('click', wfCloseModal);
     document.getElementById('wf-modal-zoom-reset').addEventListener('click', () => {
         _wfZoom = 1; _wfOffset = 0; wfDraw(); wfUpdateInfo();
@@ -501,7 +504,6 @@ function wfInit() {
     document.getElementById('wf-modal-auto-slice').addEventListener('click', autoSlice);
     document.getElementById('wf-modal-fill').addEventListener('click', fillBreak);
 
-    // ESC closes modal
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && _wfModalOpen) { wfCloseModal(); }
     });
@@ -514,12 +516,12 @@ function buildLegend() {
     legend.innerHTML = '';
     const total = state.audioBuffer?.length ?? 1;
     state.slices.forEach((sl, i) => {
-        const div = document.createElement('div');
+        const div  = document.createElement('div');
         div.className = 'slice-item';
-        const ns = document.createElement('span');
+        const ns   = document.createElement('span');
         ns.className   = 'slice-note';
         ns.textContent = SLICE_KEYS[i] || sl.note;
-        const bar = document.createElement('div');
+        const bar  = document.createElement('div');
         bar.className  = 'slice-bar';
         const fill = document.createElement('div');
         fill.className = 'slice-bar-fill';
@@ -556,17 +558,10 @@ function updateTimingInfo() {
         `<span style="color:${color}">${status}</span>`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FILL BREAK — distribui slices no padrão automaticamente
-// ─────────────────────────────────────────────────────────────────────────────
 function fillBreak() {
     if (!state.slices.length) { alert('Carregue um sample e fatie primeiro.'); return; }
     const n = state.slices.length;
-
-    // limpa track 0
     for (let s = 0; s < state.numSteps; s++) state.pattern[s][0] = makeCell();
-
-    // Espaça os slices uniformemente
     for (let i = 0; i < n && i < state.numSteps; i++) {
         const step = Math.round((i / n) * state.numSteps);
         if (step < state.numSteps) {
@@ -575,11 +570,17 @@ function fillBreak() {
         }
     }
     trkBuildTable();
+    stateSave();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TRACKER UI
-// ─────────────────────────────────────────────────────────────────────────────
+function equalSlices(n) {
+    if (!state.audioBuffer) return;
+    const total  = state.audioBuffer.length;
+    const points = Array.from({ length: n }, (_, i) => Math.floor((i / n) * total));
+    buildSlices(points, total);
+    wfDraw(); buildLegend(); updateSliceCount(); updateTimingInfo();
+}
+
 const QWERTY_LOWER = { z:0,s:1,x:2,d:3,c:4,v:5,g:6,b:7,h:8,n:9,j:10,m:11 };
 const QWERTY_UPPER = { q:0,2:1,w:2,3:3,e:4,r:5,5:6,t:7,6:8,y:9,7:10,u:11 };
 
@@ -593,8 +594,20 @@ function trkBuildTable() {
     const hr1 = document.createElement('tr');
     const st  = document.createElement('th'); st.colSpan = 2; hr1.appendChild(st);
     for (let t = 0; t < state.numTracks; t++) {
-        const th = document.createElement('th');
-        th.colSpan = 3; th.textContent = `TRACK ${t+1}`; th.style.textAlign = 'center';
+        const th  = document.createElement('th');
+        th.colSpan = 3; th.style.textAlign = 'center';
+        const lbl = document.createElement('span');
+        lbl.textContent = `TRACK ${t+1} `;
+        const mb  = document.createElement('button');
+        mb.className = 'btn-mute'; mb.textContent = 'M';
+        mb.classList.toggle('muted', !!_trackMuted[t]);
+        mb.addEventListener('click', e => {
+            e.stopPropagation();
+            _trackMuted[t] = !_trackMuted[t];
+            mb.classList.toggle('muted', _trackMuted[t]);
+            stateSave();
+        });
+        th.appendChild(lbl); th.appendChild(mb);
         hr1.appendChild(th);
         if (t < state.numTracks - 1) {
             const sep = document.createElement('th'); sep.className = 'track-sep'; hr1.appendChild(sep);
@@ -604,7 +617,7 @@ function trkBuildTable() {
 
     const hr2 = document.createElement('tr');
     hr2.appendChild(document.createElement('th'));
-    const e2 = document.createElement('th'); e2.className = 'track-sep'; hr2.appendChild(e2);
+    const e2  = document.createElement('th'); e2.className = 'track-sep'; hr2.appendChild(e2);
     for (let t = 0; t < state.numTracks; t++) {
         ['NOTE','VOL','FX'].forEach((label, ci) => {
             const th = document.createElement('th');
@@ -632,7 +645,7 @@ function trkBuildTable() {
         for (let t = 0; t < state.numTracks; t++) {
             for (let c = 0; c < 3; c++) {
                 const td = document.createElement('td');
-                td.dataset.step = s; td.dataset.track = t; td.dataset.col = c;
+                td.dataset.step  = s; td.dataset.track = t; td.dataset.col = c;
                 td.classList.add(['cell-note','cell-vol','cell-fx'][c]);
                 td.addEventListener('mousedown', e => {
                     sel = { step:s, track:t, col:c };
@@ -696,6 +709,8 @@ function fxStr(fx) {
     if (fx.type === 'B') return 'B--';
     if (fx.type === 'R') return `R${fx.value.toString().padStart(2,'0')}`;
     if (fx.type === 'P') return fx.value < 0 ? `P-${Math.abs(fx.value)}` : `P${fx.value.toString().padStart(2,'0')}`;
+    if (fx.type === 'S') return `S${fx.value.toString(16).toUpperCase().padStart(2,'0')}`;
+    if (fx.type === 'C') return `C${fx.value.toString(16).toUpperCase().padStart(2,'0')}`;
     return '---';
 }
 
@@ -714,16 +729,16 @@ function trkHighlightStep(step) {
 
 function trkRefreshCells(step, track) {
     for (let c = 0; c < 3; c++) trkUpdateCell(null, step, track, c);
+    stateSave();
 }
 
-// ── keyboard ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     const key = e.key.toLowerCase();
 
     if (key === 'arrowdown')  { e.preventDefault(); trkMove(1, 0, 0); return; }
-    if (key === 'arrowup')    { e.preventDefault(); trkMove(-1,0, 0); return; }
-    if (key === 'arrowleft')  { e.preventDefault(); trkMove(0, 0,-1); return; }
+    if (key === 'arrowup')    { e.preventDefault(); trkMove(-1, 0, 0); return; }
+    if (key === 'arrowleft')  { e.preventDefault(); trkMove(0, 0, -1); return; }
     if (key === 'arrowright') { e.preventDefault(); trkMove(0, 0, 1); return; }
     if (key === 'tab')        { e.preventDefault(); trkMove(0, e.shiftKey ? -1 : 1, 0); return; }
     if (key === 'delete' || key === 'backspace') { e.preventDefault(); trkClearCell(); return; }
@@ -731,7 +746,6 @@ document.addEventListener('keydown', e => {
     const { step, track, col } = sel;
 
     if (col === 0) {
-        // ] = Note OFF
         if (key === ']') {
             const cell = state.pattern[step][track];
             cell.note = 'OFF'; cell.fx = null;
@@ -745,7 +759,7 @@ document.addEventListener('keydown', e => {
             trkSetNote(step, track, note);
             trkMove(1, 0, 0); return;
         }
-        if (key === 'f1' || key === 'f2') { e.preventDefault(); trkShiftOctave(step, track, key==='f2'?1:-1); return; }
+        if (key === 'f1' || key === 'f2') { e.preventDefault(); trkShiftOctave(step, track, key === 'f2' ? 1 : -1); return; }
     }
     if (col === 1) {
         if (/^[0-9a-f]$/i.test(key)) {
@@ -761,12 +775,24 @@ document.addEventListener('keydown', e => {
 
 function trkFxKey(key, step, track) {
     const cell = state.pattern[step]?.[track]; if (!cell) return;
-    if (key === 'r') { cell.fx = { type:'R', value:3 }; trkRefreshCells(step,track); return; }
-    if (key === 'b') { cell.fx = { type:'B', value:0 }; trkRefreshCells(step,track); return; }
-    if (key === 'p') { cell.fx = { type:'P', value:0 }; trkRefreshCells(step,track); return; }
-    if (cell.fx && (key==='+' || key==='=')) { cell.fx.value++; trkRefreshCells(step,track); return; }
-    if (cell.fx && key==='-')               { cell.fx.value--; trkRefreshCells(step,track); return; }
-    if (cell.fx && /^\d$/.test(key))        { cell.fx.value = parseInt(key); trkRefreshCells(step,track); return; }
+    if (key === 'r') { cell.fx = { type:'R', value:3    }; trkRefreshCells(step, track); return; }
+    if (key === 'b') { cell.fx = { type:'B', value:0    }; trkRefreshCells(step, track); return; }
+    if (key === 'p') { cell.fx = { type:'P', value:0    }; trkRefreshCells(step, track); return; }
+    if (key === 's') { cell.fx = { type:'S', value:0x40 }; trkRefreshCells(step, track); return; }
+    if (key === 'c') { cell.fx = { type:'C', value:0x80 }; trkRefreshCells(step, track); return; }
+    if (cell.fx && (key === '+' || key === '=')) {
+        cell.fx.value = Math.min(0xff, cell.fx.value + 1);
+        trkRefreshCells(step, track); return;
+    }
+    if (cell.fx && key === '-') {
+        cell.fx.value = Math.max(0, cell.fx.value - 1);
+        trkRefreshCells(step, track); return;
+    }
+    if (cell.fx && /^[0-9a-f]$/i.test(key)) {
+        const cur = cell.fx.value.toString(16).padStart(2,'0');
+        cell.fx.value = parseInt(cur[1] + key, 16);
+        trkRefreshCells(step, track); return;
+    }
 }
 
 function trkMove(dStep, dTrack, dCol) {
@@ -801,9 +827,6 @@ function trkClearCell() {
     trkRefreshCells(step, track);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// KITS BROWSER
-// ─────────────────────────────────────────────────────────────────────────────
 const AUDIO_EXTS = new Set(['wav','mp3','aif','aiff','ogg','flac']);
 let _kitsAll = [], _kitsFiltered = [], _kitsPreviewCtx = null, _kitsPreviewSrc = null;
 let _kitsUseHttp = false;
@@ -826,7 +849,7 @@ async function kitsTryHttp() {
     try {
         const r = await fetch('./kits-index.json');
         if (!r.ok) return false;
-        const paths = await r.json();
+        const paths  = await r.json();
         _kitsAll      = paths.map(p => ({ name: p.split('/').pop(), path: p }));
         _kitsFiltered = _kitsAll;
         _kitsUseHttp  = true;
@@ -872,10 +895,10 @@ function kitsRender(files) {
     const list = document.getElementById('kits-list');
     list.innerHTML = '';
     files.forEach((f, i) => {
-        const li = document.createElement('li'); li.dataset.idx = i;
+        const li    = document.createElement('li'); li.dataset.idx = i;
         const parts = f.path.split('/'); const fname = parts.pop(); const fdir = parts.join('/');
-        if (fdir) { const ds = document.createElement('span'); ds.className='kit-dir'; ds.textContent=fdir+'/'; li.appendChild(ds); }
-        const ns = document.createElement('span'); ns.className='kit-name'; ns.textContent=fname; li.appendChild(ns);
+        if (fdir) { const ds = document.createElement('span'); ds.className = 'kit-dir'; ds.textContent = fdir + '/'; li.appendChild(ds); }
+        const ns = document.createElement('span'); ns.className = 'kit-name'; ns.textContent = fname; li.appendChild(ns);
         list.appendChild(li);
     });
 }
@@ -917,16 +940,13 @@ function kitsStopPreview() {
     if (_kitsPreviewSrc) { try { _kitsPreviewSrc.stop(); } catch(_){} _kitsPreviewSrc = null; }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EXPORTER
-// ─────────────────────────────────────────────────────────────────────────────
 async function exportWav() {
     if (!state.audioBuffer || !state.slices.length) throw new Error('Sem sample ou slices.');
-    const sr = state.audioBuffer.sampleRate;
-    const stepDur = 60 / (state.bpm * state.lpb);
+    const sr       = state.audioBuffer.sampleRate;
+    const stepDur  = 60 / (state.bpm * state.lpb);
     const totalDur = stepDur * state.numSteps + 2;
-    const offCtx = new OfflineAudioContext(2, Math.ceil(totalDur * sr), sr);
-    const master = offCtx.createGain(); master.gain.value = 0.9; master.connect(offCtx.destination);
+    const offCtx   = new OfflineAudioContext(2, Math.ceil(totalDur * sr), sr);
+    const master   = offCtx.createGain(); master.gain.value = 0.9; master.connect(offCtx.destination);
 
     function extractOff(si, reverse) {
         const buf = state.audioBuffer; const sl = state.slices[si]; if (!sl) return null;
@@ -941,24 +961,29 @@ async function exportWav() {
     }
 
     for (let s = 0; s < state.numSteps; s++) {
-        const swing     = (s % 2 === 1) ? stepDur * (state.swing / 100) : 0;
-        const baseTime  = s * stepDur + swing;
+        const swing    = (s % 2 === 1) ? stepDur * (state.swing / 100) : 0;
+        const baseTime = s * stepDur + swing;
         for (let t = 0; t < state.numTracks; t++) {
             const cell = state.pattern[s]?.[t]; if (!cell?.note || cell.note === 'OFF') continue;
-            const si = noteToSliceIndex(cell.note); if (si < 0 || si >= state.slices.length) continue;
-            const vol = (cell.vol ?? 0xff) / 0xff;
-            let pitchSemi = 0, reverse = false, retrigger = 1;
+            const si   = noteToSliceIndex(cell.note); if (si < 0 || si >= state.slices.length) continue;
+            const vol  = (cell.vol ?? 0xff) / 0xff;
+            let pitchSemi = 0, reverse = false, retrigger = 1, sampleOffset = 0, cutTime = 0;
             if (cell.fx) {
-                if (cell.fx.type === 'P') pitchSemi = cell.fx.value;
+                const fv = cell.fx.value;
+                if (cell.fx.type === 'P') pitchSemi = fv;
                 if (cell.fx.type === 'B') reverse   = true;
-                if (cell.fx.type === 'R') retrigger = Math.max(1, cell.fx.value);
+                if (cell.fx.type === 'R') retrigger = Math.max(1, fv);
+                if (cell.fx.type === 'S') sampleOffset = (fv / 0xff) * (state.slices[si].end - state.slices[si].start) / sr;
+                if (cell.fx.type === 'C') cutTime = (fv / 0xff) * stepDur;
             }
             const sched = t0 => {
                 const sbuf = extractOff(si, reverse); if (!sbuf) return;
-                const src = offCtx.createBufferSource();
+                const src  = offCtx.createBufferSource();
                 src.buffer = sbuf; src.playbackRate.value = Math.pow(2, pitchSemi / 12);
-                const g = offCtx.createGain(); g.gain.value = Math.max(0, Math.min(2, vol));
-                src.connect(g); g.connect(master); src.start(t0);
+                const g    = offCtx.createGain(); g.gain.value = Math.max(0, Math.min(2, vol));
+                src.connect(g); g.connect(master);
+                src.start(t0, Math.max(0, Math.min(sampleOffset, sbuf.duration - 0.001)));
+                if (cutTime > 0) src.stop(t0 + cutTime);
             };
             if (retrigger > 1) { const iv = stepDur / retrigger; for (let i = 0; i < retrigger; i++) sched(baseTime + i * iv); }
             else sched(baseTime);
@@ -970,9 +995,9 @@ async function exportWav() {
 
 function bufToWav(buf) {
     const numCh = buf.numberOfChannels, sr = buf.sampleRate, len = buf.length;
-    const bps = 2, ba = numCh * bps, ds = len * ba;
-    const ab = new ArrayBuffer(44 + ds); const view = new DataView(ab);
-    const ws = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o+i, s.charCodeAt(i)); };
+    const bps   = 2, ba = numCh * bps, ds = len * ba;
+    const ab    = new ArrayBuffer(44 + ds); const view = new DataView(ab);
+    const ws    = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o+i, s.charCodeAt(i)); };
     ws(0,'RIFF'); view.setUint32(4,36+ds,true); ws(8,'WAVE'); ws(12,'fmt ');
     view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,numCh,true);
     view.setUint32(24,sr,true); view.setUint32(28,sr*ba,true); view.setUint16(32,ba,true);
@@ -985,9 +1010,6 @@ function bufToWav(buf) {
     return new Blob([ab], { type:'audio/wav' });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN
-// ─────────────────────────────────────────────────────────────────────────────
 function switchTab(name) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('hidden', c.id !== `tab-${name}`));
@@ -1008,18 +1030,29 @@ async function loadSampleBuffer(name, ab) {
     document.getElementById('sample-name').textContent = name;
     state.audioBuffer = await ac.decodeAudioData(ab);
     _wfZoom = 1; _wfOffset = 0;
-    document.getElementById('btn-auto-slice').disabled   = false;
-    document.getElementById('btn-clear-slices').disabled = false;
-    document.getElementById('btn-fill-break').disabled   = false;
+    ['btn-auto-slice','btn-clear-slices','btn-fill-break','btn-slice-8','btn-slice-16','btn-slice-32']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
 
-    // BPM detect from filename
     const detectedBpm = bpmFromFilename(name);
     if (detectedBpm) {
         state.bpm = detectedBpm;
         document.getElementById('bpm').value = detectedBpm;
     }
 
-    autoSlice();
+    if (_pendingSliceFracs && name === _savedSampleName) {
+        const total = state.audioBuffer.length;
+        state.slices = _pendingSliceFracs.map(f => ({
+            start: Math.round(f.sf * total),
+            end:   Math.round(f.ef * total),
+            note:  f.note,
+        }));
+        _pendingSliceFracs = null;
+        wfDraw(); buildLegend(); updateSliceCount(); updateTimingInfo();
+    } else {
+        _pendingSliceFracs = null;
+        autoSlice();
+    }
+    stateSave();
 }
 
 function autoSlice() {
@@ -1031,6 +1064,7 @@ function autoSlice() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+    stateLoad();
     trkBuildTable();
     wfInit();
     kitsMount();
@@ -1039,59 +1073,59 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!ok) document.getElementById('kits-status').textContent = 'use INICIAR.bat para auto-carregar kits';
     });
 
-    // tabs
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    // BPM / LPB / STEPS / TRACKS
     document.getElementById('bpm').addEventListener('change', e => {
         state.bpm = parseInt(e.target.value) || 174;
-        wfDraw(); updateTimingInfo();
+        wfDraw(); updateTimingInfo(); stateSave();
     });
     document.getElementById('lpb').addEventListener('change', e => {
         state.lpb = parseInt(e.target.value) || 4;
         state.pattern = makePattern(state.numSteps, state.numTracks); trkBuildTable();
-        wfDraw(); updateTimingInfo();
+        wfDraw(); updateTimingInfo(); stateSave();
     });
     document.getElementById('steps').addEventListener('change', e => {
         state.numSteps = parseInt(e.target.value);
         state.pattern  = makePattern(state.numSteps, state.numTracks); trkBuildTable();
-        wfDraw(); updateTimingInfo();
+        wfDraw(); updateTimingInfo(); stateSave();
     });
     document.getElementById('num-tracks').addEventListener('change', e => {
         state.numTracks = parseInt(e.target.value);
         state.pattern   = makePattern(state.numSteps, state.numTracks); trkBuildTable();
+        stateSave();
     });
 
-    // VOLUME
     document.getElementById('master-vol').addEventListener('input', e => {
         _masterVol = parseInt(e.target.value) / 100;
         document.getElementById('vol-val').textContent = e.target.value + '%';
         if (_masterGain) _masterGain.gain.value = _masterVol;
     });
 
-    // SWING
     document.getElementById('swing').addEventListener('input', e => {
         state.swing = parseInt(e.target.value);
         document.getElementById('swing-val').textContent = e.target.value + '%';
+        stateSave();
     });
 
-    // PLAY / STOP
+    document.getElementById('btn-slice-8' ).addEventListener('click', () => equalSlices(8));
+    document.getElementById('btn-slice-16').addEventListener('click', () => equalSlices(16));
+    document.getElementById('btn-slice-32').addEventListener('click', () => equalSlices(32));
+
     const btnPlay = document.getElementById('btn-play');
     btnPlay.addEventListener('click', () => {
         getCtx();
-        if (_seqPlaying) { seqStop(); btnPlay.textContent='▶ PLAY'; btnPlay.classList.remove('active'); return; }
+        if (_seqPlaying) { seqStop(); btnPlay.textContent = '▶ PLAY'; btnPlay.classList.remove('active'); return; }
         seqPlay(step => trkHighlightStep(step));
-        btnPlay.textContent='■ STOP'; btnPlay.classList.add('active');
+        btnPlay.textContent = '■ STOP'; btnPlay.classList.add('active');
     });
     document.getElementById('btn-stop').addEventListener('click', () => {
         seqStop(); trkHighlightStep(-1);
         const btnPlay = document.getElementById('btn-play');
-        btnPlay.textContent='▶ PLAY'; btnPlay.classList.remove('active');
+        btnPlay.textContent = '▶ PLAY'; btnPlay.classList.remove('active');
     });
 
-    // SAMPLE LOAD
     const dropzone  = document.getElementById('dropzone');
     const fileInput = document.getElementById('file-input');
     dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
@@ -1102,19 +1136,15 @@ window.addEventListener('DOMContentLoaded', () => {
     });
     fileInput.addEventListener('change', e => { const file = e.target.files[0]; if (file) loadSampleFile(file); });
 
-    // SLICER
     document.getElementById('sensitivity').addEventListener('input', e => {
         document.getElementById('sens-val').textContent = e.target.value;
     });
     document.getElementById('btn-auto-slice').addEventListener('click', autoSlice);
     document.getElementById('btn-clear-slices').addEventListener('click', () => {
-        state.slices = []; wfDraw(); buildLegend(); updateSliceCount(); updateTimingInfo();
+        state.slices = []; wfDraw(); buildLegend(); updateSliceCount(); updateTimingInfo(); stateSave();
     });
-
-    // FILL BREAK
     document.getElementById('btn-fill-break').addEventListener('click', fillBreak);
 
-    // EXPORT
     document.getElementById('btn-export').addEventListener('click', async () => {
         const btn = document.getElementById('btn-export');
         btn.textContent = '... rendering'; btn.disabled = true;
@@ -1126,6 +1156,79 @@ window.addEventListener('DOMContentLoaded', () => {
             URL.revokeObjectURL(url);
         } catch (err) { alert('Erro: ' + err.message); }
         finally { btn.textContent = '↓ WAV'; btn.disabled = false; }
+    });
+
+    document.getElementById('btn-save-proj').addEventListener('click', () => {
+        const totalLen = state.audioBuffer?.length || 1;
+        const proj = {
+            v: 1,
+            bpm: state.bpm, lpb: state.lpb, numSteps: state.numSteps,
+            numTracks: state.numTracks, swing: state.swing,
+            pattern: state.pattern,
+            muted: _trackMuted.slice(0, state.numTracks),
+            sampleName: document.getElementById('sample-name').textContent.replace(/^⟳ /,''),
+            slices: state.slices.map(s => ({ sf: s.start/totalLen, ef: s.end/totalLen, note: s.note })),
+        };
+        const name = (proj.sampleName || 'projeto').replace(/\.[^.]+$/, '');
+        const blob = new Blob([JSON.stringify(proj, null, 2)], { type: 'application/json' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = `${name}.json`; a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    const projInput = document.getElementById('proj-file-input');
+    document.getElementById('btn-load-proj').addEventListener('click', () => projInput.click());
+    projInput.addEventListener('change', e => {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const d = JSON.parse(ev.target.result);
+                state.bpm       = d.bpm      ?? 174;
+                state.lpb       = d.lpb      ?? 4;
+                state.numSteps  = d.numSteps ?? 32;
+                state.numTracks = d.numTracks?? 4;
+                state.swing     = d.swing    ?? 0;
+                if (d.pattern?.length === state.numSteps && d.pattern[0]?.length === state.numTracks)
+                    state.pattern = d.pattern;
+                else
+                    state.pattern = makePattern(state.numSteps, state.numTracks);
+                if (Array.isArray(d.muted)) d.muted.forEach((v,i) => { _trackMuted[i] = !!v; });
+
+                const savedName   = d.sampleName || '';
+                const fracs       = d.slices?.length ? d.slices : null;
+                const currentName = document.getElementById('sample-name').textContent.replace(/^⟳ /,'');
+
+                if (state.audioBuffer && fracs && savedName && savedName === currentName) {
+                    const total  = state.audioBuffer.length;
+                    state.slices = fracs.map(f => ({
+                        start: Math.round(f.sf * total),
+                        end:   Math.round(f.ef * total),
+                        note:  f.note,
+                    }));
+                    _pendingSliceFracs = null;
+                    _savedSampleName   = savedName;
+                } else {
+                    _savedSampleName   = savedName;
+                    _pendingSliceFracs = fracs;
+                    if (savedName)
+                        document.getElementById('sample-name').textContent = '⟳ ' + savedName;
+                }
+
+                document.getElementById('bpm').value        = state.bpm;
+                document.getElementById('lpb').value        = state.lpb;
+                document.getElementById('steps').value      = state.numSteps;
+                document.getElementById('num-tracks').value = state.numTracks;
+                document.getElementById('swing').value      = state.swing;
+                document.getElementById('swing-val').textContent = state.swing + '%';
+                trkBuildTable();
+                wfDraw(); buildLegend(); updateSliceCount(); updateTimingInfo();
+                stateSave();
+            } catch(err) { alert('Erro ao carregar projeto: ' + err.message); }
+        };
+        reader.readAsText(file);
+        projInput.value = '';
     });
 
     window.addEventListener('resize', wfDraw);

@@ -31,6 +31,9 @@
             <button id="btn-play">▶ PLAY</button>
             <button id="btn-stop">■ STOP</button>
             <button id="btn-export">↓ WAV</button>
+            <button id="btn-save-proj">↓ PROJ</button>
+            <button id="btn-load-proj">↑ PROJ</button>
+            <input type="file" id="proj-file-input" accept=".json" style="display:none">
         </div>
         <div id="vol-group" class="ctrl-group">
             <span class="lbl">VOL</span>
@@ -72,6 +75,11 @@
                         <input type="range" id="sensitivity" min="1" max="10" value="5">
                         <span id="sens-val">5</span>
                     </div>
+                    <div style="display:flex;gap:4px">
+                        <button id="btn-slice-8"  disabled style="flex:1">÷8</button>
+                        <button id="btn-slice-16" disabled style="flex:1">÷16</button>
+                        <button id="btn-slice-32" disabled style="flex:1">÷32</button>
+                    </div>
                     <button id="btn-clear-slices" disabled>CLEAR</button>
                 </div>
                 <div id="timing-info"></div>
@@ -85,6 +93,8 @@
                     <div class="fx-row"><span class="fx-code">Bxx</span><span>Reverse slice</span></div>
                     <div class="fx-row"><span class="fx-code">Pxx</span><span>Pitch +xx semitons</span></div>
                     <div class="fx-row"><span class="fx-code">P-x</span><span>Pitch -x semitons</span></div>
+                    <div class="fx-row"><span class="fx-code">Sxx</span><span>Sample offset (00=início FF=fim)</span></div>
+                    <div class="fx-row"><span class="fx-code">Cxx</span><span>Cut — gate length (00=nada FF=step)</span></div>
                     <div class="fx-title" style="margin-top:8px">NOTE INPUT</div>
                     <div class="fx-row"><span class="fx-code">Z S X D C V G B H N J M</span><span>slices 0–11</span></div>
                     <div class="fx-row"><span class="fx-code">Q 2 W 3 E R 5 T 6 Y 7 U</span><span>slices 12–23</span></div>
