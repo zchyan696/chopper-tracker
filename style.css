@@ -125,6 +125,28 @@ button:disabled:hover { background: var(--bg3); color: var(--text); }
     min-height: 14px;
 }
 
+#key-info {
+    font-size: 11px;
+    margin-top: 4px;
+    min-height: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+#key-info .key-note {
+    color: #e0e040;
+    font-weight: bold;
+    font-size: 13px;
+}
+#key-info .key-cents {
+    color: var(--text-dim);
+    font-size: 10px;
+}
+#key-info .key-hz {
+    color: #555;
+    font-size: 10px;
+}
+
 /* Note OFF in tracker */
 td.cell-off { color: #e08030 !important; }
 

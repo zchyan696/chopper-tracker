@@ -242,6 +242,55 @@ function addManualSlice(normX) {
     buildSlices(existing, state.audioBuffer.length);
 }
 
+function freqToNote(freq) {
+    if (!freq || freq <= 0) return null;
+    const semis = 12 * Math.log2(freq / 440);
+    const n     = Math.round(semis);
+    const cents = Math.round((semis - n) * 100);
+    const oct   = Math.floor(n / 12) + 4;
+    const name  = NOTE_NAMES[((n % 12) + 12) % 12];
+    return { name, oct, cents, freq: Math.round(freq) };
+}
+
+function analyzeKey(buffer) {
+    const data  = buffer.getChannelData(0);
+    const sr    = buffer.sampleRate;
+    const step  = 4;
+    const effSr = sr / step;
+    const rawLen = Math.min(data.length, Math.floor(sr * 3));
+    const len   = Math.floor(rawLen / step);
+
+    const samples = new Float32Array(len);
+    for (let i = 0; i < len; i++) samples[i] = data[i * step];
+
+    const minLag = Math.floor(effSr / 700);
+    const maxLag = Math.floor(effSr / 55);
+    const winLen = len - maxLag;
+    if (winLen < 100) return null;
+
+    let bestTau = minLag, bestCorr = -Infinity;
+    for (let tau = minLag; tau < maxLag; tau++) {
+        let corr = 0;
+        for (let i = 0; i < winLen; i++) corr += samples[i] * samples[i + tau];
+        if (corr > bestCorr) { bestCorr = corr; bestTau = tau; }
+    }
+
+    return freqToNote(effSr / bestTau);
+}
+
+function showKeyInfo(result) {
+    const el = document.getElementById('key-info');
+    if (!el) return;
+    if (!result) { el.innerHTML = ''; return; }
+    const sign  = result.cents >= 0 ? '+' : '';
+    const color = Math.abs(result.cents) < 15 ? '#50c050' : '#e0a030';
+    el.innerHTML =
+        `<span style="color:#555;font-size:10px">pitch dominante</span>` +
+        `<span class="key-note">${result.name}${result.oct}</span>` +
+        `<span class="key-cents" style="color:${color}">${sign}${result.cents}¢</span>` +
+        `<span class="key-hz">${result.freq}Hz</span>`;
+}
+
 function bpmFromFilename(name) {
     const nums = (name.match(/\d+/g) || []).map(Number).filter(n => n >= 60 && n <= 300);
     return nums.length ? nums[nums.length - 1] : null;
@@ -1132,6 +1181,8 @@ async function loadSampleBuffer(name, ab) {
         state.bpm = detectedBpm;
         document.getElementById('bpm').value = detectedBpm;
     }
+
+    setTimeout(() => showKeyInfo(analyzeKey(state.audioBuffer)), 0);
 
     if (_pendingSliceFracs && name === _savedSampleName) {
         const total = state.audioBuffer.length;
