@@ -470,6 +470,7 @@ window.addEventListener('mousemove', e => {
 });
 
 window.addEventListener('mouseup', e => {
+    _trkMouseDown = false;
     if (!_wfDrag) return;
     const canvas = _wfDrag.canvas || wfAC();
     if (!_wfMoved && _wfDrag.type === 'pan' && state.audioBuffer) {
@@ -601,7 +602,8 @@ function equalSlices(n) {
 const QWERTY_LOWER = { z:0,s:1,x:2,d:3,c:4,v:5,g:6,b:7,h:8,n:9,j:10,m:11 };
 const QWERTY_UPPER = { q:0,2:1,w:2,3:3,e:4,r:5,5:6,t:7,6:8,y:9,7:10,u:11 };
 
-let sel = { step: 0, track: 0, col: 0 };
+let sel = { step: 0, track: 0, col: 0, endStep: 0, endTrack: 0 };
+let _trkMouseDown = false;
 
 function trkBuildTable() {
     const head = document.getElementById('tracker-head');
@@ -665,7 +667,8 @@ function trkBuildTable() {
                 td.dataset.step  = s; td.dataset.track = t; td.dataset.col = c;
                 td.classList.add(['cell-note','cell-vol','cell-fx'][c]);
                 td.addEventListener('mousedown', e => {
-                    sel = { step:s, track:t, col:c };
+                    sel = { step:s, track:t, col:c, endStep:s, endTrack:t };
+                    _trkMouseDown = true;
                     trkRefreshSel();
                     if (e.button === 2) {
                         pushUndo();
@@ -680,6 +683,11 @@ function trkBuildTable() {
                             const si = noteToSliceIndex(cell.note); if (si >= 0) previewSlice(si);
                         }
                     }
+                });
+                td.addEventListener('mouseover', () => {
+                    if (!_trkMouseDown) return;
+                    sel.endStep = s; sel.endTrack = t;
+                    trkRefreshSel();
                 });
                 td.addEventListener('contextmenu', e => e.preventDefault());
                 trkUpdateCell(td, s, t, c);
@@ -734,8 +742,18 @@ function fxStr(fx) {
 
 function trkRefreshSel() {
     document.querySelectorAll('.cell-selected').forEach(e => e.classList.remove('cell-selected'));
-    const td = trkGetTd(sel.step, sel.track, sel.col);
-    if (td) { td.classList.add('cell-selected'); td.scrollIntoView({ block:'nearest', inline:'nearest' }); }
+    const s1 = Math.min(sel.step, sel.endStep);
+    const s2 = Math.max(sel.step, sel.endStep);
+    const t1 = Math.min(sel.track, sel.endTrack);
+    const t2 = Math.max(sel.track, sel.endTrack);
+    for (let s = s1; s <= s2; s++)
+        for (let t = t1; t <= t2; t++)
+            for (let c = 0; c < 3; c++) {
+                const td = trkGetTd(s, t, c);
+                if (td) td.classList.add('cell-selected');
+            }
+    const anchor = trkGetTd(sel.step, sel.track, sel.col);
+    if (anchor) anchor.scrollIntoView({ block:'nearest', inline:'nearest' });
 }
 
 function trkHighlightStep(step) {
@@ -752,24 +770,44 @@ function trkRefreshCells(step, track) {
 
 document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-    if (_wfModalOpen) return;
+    if (_wfModalOpen) {
+        const sk = e.key.toUpperCase();
+        const si = SLICE_KEYS.indexOf(sk);
+        if (si >= 0) previewSlice(si);
+        if (e.key === 'Escape') wfCloseModal();
+        return;
+    }
     const key = e.key.toLowerCase();
 
     if ((e.ctrlKey || e.metaKey) && key === 'z') { e.preventDefault(); undoPop(); return; }
     if ((e.ctrlKey || e.metaKey) && key === 'c') {
         e.preventDefault();
-        const { step, track } = sel;
-        _copyBuf = JSON.parse(JSON.stringify(state.pattern[step][track]));
+        const s1 = Math.min(sel.step, sel.endStep), s2 = Math.max(sel.step, sel.endStep);
+        const t1 = Math.min(sel.track, sel.endTrack), t2 = Math.max(sel.track, sel.endTrack);
+        _copyBuf = [];
+        for (let s = s1; s <= s2; s++) {
+            const row = [];
+            for (let t = t1; t <= t2; t++) row.push(JSON.parse(JSON.stringify(state.pattern[s][t])));
+            _copyBuf.push(row);
+        }
         return;
     }
     if ((e.ctrlKey || e.metaKey) && key === 'v') {
         e.preventDefault();
-        if (!_copyBuf) return;
-        const { step, track } = sel;
+        if (!_copyBuf?.length) return;
         pushUndo();
-        state.pattern[step][track] = JSON.parse(JSON.stringify(_copyBuf));
-        trkRefreshCells(step, track);
-        trkMove(1, 0, 0);
+        const { step, track } = sel;
+        for (let ds = 0; ds < _copyBuf.length; ds++)
+            for (let dt = 0; dt < _copyBuf[ds].length; dt++) {
+                const s = step + ds, t = track + dt;
+                if (s < state.numSteps && t < state.numTracks) {
+                    state.pattern[s][t] = JSON.parse(JSON.stringify(_copyBuf[ds][dt]));
+                    for (let c = 0; c < 3; c++) trkUpdateCell(null, s, t, c);
+                }
+            }
+        sel.endStep  = Math.min(state.numSteps  - 1, step  + _copyBuf.length - 1);
+        sel.endTrack = Math.min(state.numTracks - 1, track + _copyBuf[0].length - 1);
+        trkRefreshSel(); stateSave();
         return;
     }
 
@@ -778,7 +816,22 @@ document.addEventListener('keydown', e => {
     if (key === 'arrowleft')  { e.preventDefault(); trkMove(0, 0, -1); return; }
     if (key === 'arrowright') { e.preventDefault(); trkMove(0, 0, 1); return; }
     if (key === 'tab')        { e.preventDefault(); trkMove(0, e.shiftKey ? -1 : 1, 0); return; }
-    if (key === 'delete' || key === 'backspace') { e.preventDefault(); pushUndo(); trkClearCell(); return; }
+    if (key === 'delete' || key === 'backspace') {
+        e.preventDefault(); pushUndo();
+        const s1 = Math.min(sel.step, sel.endStep), s2 = Math.max(sel.step, sel.endStep);
+        const t1 = Math.min(sel.track, sel.endTrack), t2 = Math.max(sel.track, sel.endTrack);
+        if (s1 === s2 && t1 === t2) { trkClearCell(); }
+        else {
+            for (let s = s1; s <= s2; s++)
+                for (let t = t1; t <= t2; t++) {
+                    const cell = state.pattern[s][t];
+                    cell.note = null; cell.vol = 0xff; cell.fx = null;
+                    for (let c = 0; c < 3; c++) trkUpdateCell(null, s, t, c);
+                }
+            stateSave();
+        }
+        return;
+    }
 
     const { step, track, col } = sel;
 
@@ -839,6 +892,7 @@ function trkMove(dStep, dTrack, dCol) {
     sel.col   = ((sel.col   + dCol)   % 3               + 3)               % 3;
     sel.track = ((sel.track + dTrack) % state.numTracks  + state.numTracks)  % state.numTracks;
     sel.step  = ((sel.step  + dStep)  % state.numSteps   + state.numSteps)   % state.numSteps;
+    sel.endStep = sel.step; sel.endTrack = sel.track;
     trkRefreshSel();
 }
 
