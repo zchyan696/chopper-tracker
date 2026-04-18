@@ -6,6 +6,22 @@ let _trackMuted        = [false,false,false,false,false,false];
 let _savedSampleName   = '';
 let _pendingSliceFracs = null;
 
+const _undoStack = [];
+const UNDO_MAX   = 60;
+let   _copyBuf   = null;
+
+function pushUndo() {
+    _undoStack.push(JSON.parse(JSON.stringify(state.pattern)));
+    if (_undoStack.length > UNDO_MAX) _undoStack.shift();
+}
+
+function undoPop() {
+    if (!_undoStack.length) return;
+    state.pattern = _undoStack.pop();
+    trkBuildTable();
+    stateSave();
+}
+
 function noteToSliceIndex(note) {
     if (!note || note === '---' || note === 'OFF') return -1;
     const name = note.substring(0, 2);
@@ -560,6 +576,7 @@ function updateTimingInfo() {
 
 function fillBreak() {
     if (!state.slices.length) { alert('Carregue um sample e fatie primeiro.'); return; }
+    pushUndo();
     const n = state.slices.length;
     for (let s = 0; s < state.numSteps; s++) state.pattern[s][0] = makeCell();
     for (let i = 0; i < n && i < state.numSteps; i++) {
@@ -651,6 +668,7 @@ function trkBuildTable() {
                     sel = { step:s, track:t, col:c };
                     trkRefreshSel();
                     if (e.button === 2) {
+                        pushUndo();
                         const cell = state.pattern[s][t];
                         cell.note = null; cell.vol = 0xff; cell.fx = null;
                         trkRefreshCells(s, t);
@@ -734,19 +752,39 @@ function trkRefreshCells(step, track) {
 
 document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (_wfModalOpen) return;
     const key = e.key.toLowerCase();
+
+    if ((e.ctrlKey || e.metaKey) && key === 'z') { e.preventDefault(); undoPop(); return; }
+    if ((e.ctrlKey || e.metaKey) && key === 'c') {
+        e.preventDefault();
+        const { step, track } = sel;
+        _copyBuf = JSON.parse(JSON.stringify(state.pattern[step][track]));
+        return;
+    }
+    if ((e.ctrlKey || e.metaKey) && key === 'v') {
+        e.preventDefault();
+        if (!_copyBuf) return;
+        const { step, track } = sel;
+        pushUndo();
+        state.pattern[step][track] = JSON.parse(JSON.stringify(_copyBuf));
+        trkRefreshCells(step, track);
+        trkMove(1, 0, 0);
+        return;
+    }
 
     if (key === 'arrowdown')  { e.preventDefault(); trkMove(1, 0, 0); return; }
     if (key === 'arrowup')    { e.preventDefault(); trkMove(-1, 0, 0); return; }
     if (key === 'arrowleft')  { e.preventDefault(); trkMove(0, 0, -1); return; }
     if (key === 'arrowright') { e.preventDefault(); trkMove(0, 0, 1); return; }
     if (key === 'tab')        { e.preventDefault(); trkMove(0, e.shiftKey ? -1 : 1, 0); return; }
-    if (key === 'delete' || key === 'backspace') { e.preventDefault(); trkClearCell(); return; }
+    if (key === 'delete' || key === 'backspace') { e.preventDefault(); pushUndo(); trkClearCell(); return; }
 
     const { step, track, col } = sel;
 
     if (col === 0) {
         if (key === ']') {
+            pushUndo();
             const cell = state.pattern[step][track];
             cell.note = 'OFF'; cell.fx = null;
             trkRefreshCells(step, track);
@@ -754,23 +792,25 @@ document.addEventListener('keydown', e => {
         }
         const noteIdx = QWERTY_LOWER[key] ?? QWERTY_UPPER[key] ?? -1;
         if (noteIdx >= 0) {
+            pushUndo();
             const oct  = (QWERTY_UPPER[key] !== undefined) ? BASE_OCTAVE + 1 : BASE_OCTAVE;
             const note = `${NOTE_NAMES[noteIdx]}${oct}`;
             trkSetNote(step, track, note);
             trkMove(1, 0, 0); return;
         }
-        if (key === 'f1' || key === 'f2') { e.preventDefault(); trkShiftOctave(step, track, key === 'f2' ? 1 : -1); return; }
+        if (key === 'f1' || key === 'f2') { e.preventDefault(); pushUndo(); trkShiftOctave(step, track, key === 'f2' ? 1 : -1); return; }
     }
     if (col === 1) {
         if (/^[0-9a-f]$/i.test(key)) {
             const cell = state.pattern[step]?.[track];
             if (!cell?.note || cell.note === 'OFF') return;
+            pushUndo();
             const cur = (cell.vol ?? 0xff).toString(16).padStart(2,'0');
             cell.vol  = parseInt(cur[1] + key, 16);
             trkRefreshCells(step, track); return;
         }
     }
-    if (col === 2) { trkFxKey(key, step, track); }
+    if (col === 2) { pushUndo(); trkFxKey(key, step, track); }
 });
 
 function trkFxKey(key, step, track) {
