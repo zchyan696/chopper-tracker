@@ -42,10 +42,13 @@ function makePattern(steps, trks) { return Array.from({ length: steps }, () => m
 const state = {
     bpm: 174, lpb: 4, numSteps: 32, numTracks: 4, swing: 0,
     pattern: null,
+    patterns: null,
+    currentPage: 0,
     audioBuffers: new Array(6).fill(null),
     trackSlices:  Array.from({length: 6}, () => []),
 };
-state.pattern = makePattern(state.numSteps, state.numTracks);
+state.patterns   = [makePattern(state.numSteps, state.numTracks)];
+state.pattern    = state.patterns[0];
 
 let sel = { step: 0, track: 0, col: 0, endStep: 0, endTrack: 0 };
 let _trkMouseDown = false;
@@ -68,7 +71,8 @@ function stateSave() {
         localStorage.setItem('amen-tracker-v2', JSON.stringify({
             bpm: state.bpm, lpb: state.lpb, numSteps: state.numSteps,
             numTracks: state.numTracks, swing: state.swing,
-            pattern: state.pattern,
+            patterns: state.patterns,
+            currentPage: state.currentPage,
             muted: _trackMuted.slice(0, state.numTracks),
             tracks: Array.from({length: state.numTracks}, (_, t) => ({
                 sampleName: _savedSampleNames[t],
@@ -90,10 +94,15 @@ function stateLoad() {
         state.numSteps  = d.numSteps ?? 32;
         state.numTracks = d.numTracks?? 4;
         state.swing     = d.swing    ?? 0;
-        if (d.pattern?.length === state.numSteps && d.pattern[0]?.length === state.numTracks)
-            state.pattern = d.pattern;
-        else
-            state.pattern = makePattern(state.numSteps, state.numTracks);
+        if (Array.isArray(d.patterns) && d.patterns.length) {
+            state.patterns = d.patterns;
+        } else if (d.pattern?.length === state.numSteps && d.pattern[0]?.length === state.numTracks) {
+            state.patterns = [d.pattern];
+        } else {
+            state.patterns = [makePattern(state.numSteps, state.numTracks)];
+        }
+        state.currentPage = Math.min(d.currentPage ?? 0, state.patterns.length - 1);
+        state.pattern     = state.patterns[state.currentPage];
         if (Array.isArray(d.muted)) d.muted.forEach((v,i) => { _trackMuted[i] = !!v; });
 
         if (!v1 && Array.isArray(d.tracks)) {
@@ -579,6 +588,48 @@ function equalSlices(n) {
 
 const QWERTY_LOWER = { z:0,s:1,x:2,d:3,c:4,v:5,g:6,b:7,h:8,n:9,j:10,m:11 };
 const QWERTY_UPPER = { q:0,2:1,w:2,3:3,e:4,r:5,5:6,t:7,6:8,y:9,7:10,u:11 };
+
+function switchPage(n) {
+    state.currentPage = Math.max(0, Math.min(n, state.patterns.length - 1));
+    state.pattern     = state.patterns[state.currentPage];
+    trkBuildTable();
+    updatePageSel();
+    stateSave();
+}
+
+function addPage(clone) {
+    const newPat = clone
+        ? JSON.parse(JSON.stringify(state.pattern))
+        : makePattern(state.numSteps, state.numTracks);
+    state.patterns.push(newPat);
+    switchPage(state.patterns.length - 1);
+}
+
+function delPage() {
+    if (state.patterns.length <= 1) return;
+    state.patterns.splice(state.currentPage, 1);
+    switchPage(Math.min(state.currentPage, state.patterns.length - 1));
+}
+
+function buildPageSel() {
+    const container = document.getElementById('page-sel');
+    if (!container) return;
+    container.innerHTML = '';
+    state.patterns.forEach((_, i) => {
+        const btn = document.createElement('button');
+        btn.className   = 'page-btn' + (i === state.currentPage ? ' active' : '');
+        btn.textContent = String.fromCharCode(65 + i);
+        btn.title       = `Padrão ${String.fromCharCode(65 + i)}`;
+        btn.addEventListener('click', () => switchPage(i));
+        container.appendChild(btn);
+    });
+}
+
+function updatePageSel() {
+    const btns = document.querySelectorAll('.page-btn');
+    if (btns.length !== state.patterns.length) { buildPageSel(); return; }
+    btns.forEach((b, i) => b.classList.toggle('active', i === state.currentPage));
+}
 
 function trkBuildTable() {
     const head = document.getElementById('tracker-head');
@@ -1231,6 +1282,7 @@ function autoSlice() {
 window.addEventListener('DOMContentLoaded', () => {
     stateLoad();
     trkBuildTable();
+    buildPageSel();
     buildTrackSelector();
     wfInit();
     kitsMount();
@@ -1247,21 +1299,29 @@ window.addEventListener('DOMContentLoaded', () => {
         state.bpm = parseInt(e.target.value) || 174; wfDraw(); updateTimingInfo(); stateSave();
     });
     document.getElementById('lpb').addEventListener('change', e => {
-        state.lpb = parseInt(e.target.value) || 4;
-        state.pattern = makePattern(state.numSteps, state.numTracks); trkBuildTable();
-        wfDraw(); updateTimingInfo(); stateSave();
+        const oldLpb   = state.lpb;
+        state.lpb      = parseInt(e.target.value) || 4;
+        const beats    = state.numSteps / oldLpb;
+        const newSteps = Math.round(beats * state.lpb);
+        const valid    = [16, 32, 64];
+        state.numSteps = valid.reduce((a, b) => Math.abs(b - newSteps) < Math.abs(a - newSteps) ? b : a);
+        document.getElementById('steps').value = state.numSteps;
+        state.patterns = state.patterns.map(() => makePattern(state.numSteps, state.numTracks));
+        state.pattern  = state.patterns[state.currentPage];
+        trkBuildTable(); wfDraw(); updateTimingInfo(); stateSave();
     });
     document.getElementById('steps').addEventListener('change', e => {
         state.numSteps = parseInt(e.target.value);
-        state.pattern  = makePattern(state.numSteps, state.numTracks); trkBuildTable();
-        wfDraw(); updateTimingInfo(); stateSave();
+        state.patterns = state.patterns.map(() => makePattern(state.numSteps, state.numTracks));
+        state.pattern  = state.patterns[state.currentPage];
+        trkBuildTable(); wfDraw(); updateTimingInfo(); stateSave();
     });
     document.getElementById('num-tracks').addEventListener('change', e => {
         state.numTracks = parseInt(e.target.value);
         if (_sampleTrack >= state.numTracks) _sampleTrack = 0;
-        state.pattern   = makePattern(state.numSteps, state.numTracks); trkBuildTable();
-        buildTrackSelector();
-        stateSave();
+        state.patterns = state.patterns.map(() => makePattern(state.numSteps, state.numTracks));
+        state.pattern  = state.patterns[state.currentPage];
+        trkBuildTable(); buildTrackSelector(); stateSave();
     });
     document.getElementById('master-vol').addEventListener('input', e => {
         _masterVol = parseInt(e.target.value) / 100;
@@ -1272,6 +1332,10 @@ window.addEventListener('DOMContentLoaded', () => {
         state.swing = parseInt(e.target.value);
         document.getElementById('swing-val').textContent = e.target.value + '%'; stateSave();
     });
+
+    document.getElementById('btn-page-add'  ).addEventListener('click', () => addPage(false));
+    document.getElementById('btn-page-clone').addEventListener('click', () => addPage(true));
+    document.getElementById('btn-page-del'  ).addEventListener('click', delPage);
 
     document.getElementById('btn-slice-8' ).addEventListener('click', () => equalSlices(8));
     document.getElementById('btn-slice-16').addEventListener('click', () => equalSlices(16));
@@ -1327,7 +1391,8 @@ window.addEventListener('DOMContentLoaded', () => {
         const proj = {
             v: 2, bpm: state.bpm, lpb: state.lpb, numSteps: state.numSteps,
             numTracks: state.numTracks, swing: state.swing,
-            pattern: state.pattern,
+            patterns: state.patterns,
+            currentPage: state.currentPage,
             muted: _trackMuted.slice(0, state.numTracks),
             tracks: Array.from({length: state.numTracks}, (_, t) => ({
                 sampleName: _savedSampleNames[t],
@@ -1355,10 +1420,15 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.numSteps  = d.numSteps ?? 32;
                 state.numTracks = d.numTracks?? 4;
                 state.swing     = d.swing    ?? 0;
-                if (d.pattern?.length === state.numSteps && d.pattern[0]?.length === state.numTracks)
-                    state.pattern = d.pattern;
-                else
-                    state.pattern = makePattern(state.numSteps, state.numTracks);
+                if (Array.isArray(d.patterns) && d.patterns.length) {
+                    state.patterns = d.patterns;
+                } else if (d.pattern) {
+                    state.patterns = [d.pattern];
+                } else {
+                    state.patterns = [makePattern(state.numSteps, state.numTracks)];
+                }
+                state.currentPage = Math.min(d.currentPage ?? 0, state.patterns.length - 1);
+                state.pattern     = state.patterns[state.currentPage];
                 if (Array.isArray(d.muted)) d.muted.forEach((v,i) => { _trackMuted[i] = !!v; });
 
                 if (Array.isArray(d.tracks)) {
@@ -1389,7 +1459,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('num-tracks').value = state.numTracks;
                 document.getElementById('swing').value      = state.swing;
                 document.getElementById('swing-val').textContent = state.swing + '%';
-                trkBuildTable(); refreshSamplePanel(); stateSave();
+                trkBuildTable(); buildPageSel(); refreshSamplePanel(); stateSave();
             } catch(err) { alert('Erro ao carregar projeto: ' + err.message); }
         };
         reader.readAsText(file); projInput.value = '';

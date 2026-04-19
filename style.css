@@ -560,14 +560,56 @@ td.cell-off { color: #e08030 !important; }
     min-width: 56px;
 }
 
+#page-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: #0a0a0a;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+#page-sel {
+    display: flex;
+    gap: 2px;
+    flex-wrap: wrap;
+}
+.page-btn {
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: var(--font);
+    color: var(--text-dim);
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    min-width: 28px;
+    text-align: center;
+}
+.page-btn.active {
+    background: #1a2a1a;
+    color: #50e050;
+    border-color: #306030;
+}
+#btn-page-add, #btn-page-clone, #btn-page-del {
+    padding: 2px 6px;
+    font-size: 11px;
+    font-family: var(--font);
+    cursor: pointer;
+}
+#btn-page-del { color: #804040; }
+
 /* ── TRACKER PANEL ── */
 #panel-tracker {
     flex: 1;
-    overflow: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     background: var(--bg);
 }
 
 #tracker-scroll {
+    flex: 1;
+    overflow: auto;
     min-width: max-content;
     padding: 4px;
 }
