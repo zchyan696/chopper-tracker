@@ -125,6 +125,17 @@ button:disabled:hover { background: var(--bg3); color: var(--text); }
     min-height: 14px;
 }
 
+.trk-sample-label {
+    font-size: 9px;
+    color: #4a90d9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+    margin: 0 auto;
+    opacity: 0.8;
+}
+
 #key-info {
     font-size: 11px;
     margin-top: 4px;
