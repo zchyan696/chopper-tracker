@@ -49,9 +49,10 @@ state.pattern = makePattern(state.numSteps, state.numTracks);
 
 let sel = { step: 0, track: 0, col: 0, endStep: 0, endTrack: 0 };
 let _trkMouseDown = false;
+let _sampleTrack  = 0;
 
-function curBuf()    { return state.audioBuffers[sel.track]; }
-function curSlices() { return state.trackSlices[sel.track]; }
+function curBuf()    { return state.audioBuffers[_sampleTrack]; }
+function curSlices() { return state.trackSlices[_sampleTrack]; }
 
 function stateSave() {
     try {
@@ -204,7 +205,7 @@ function scheduleCell(cell, stepDuration, audioTime, trackIdx) {
 
 function previewSlice(si) {
     const ac = getCtx();
-    playSliceAt(si, { vol: 1 }, ac.currentTime, sel.track);
+    playSliceAt(si, { vol: 1 }, ac.currentTime, _sampleTrack);
 }
 
 function detectTransients(buffer, sensitivity) {
@@ -240,7 +241,7 @@ function detectTransients(buffer, sensitivity) {
 
 function buildSlices(framePositions, totalFrames) {
     const pts = [...new Set(framePositions)].sort((a, b) => a - b);
-    state.trackSlices[sel.track] = pts.map((start, i) => ({
+    state.trackSlices[_sampleTrack] = pts.map((start, i) => ({
         start, end: pts[i + 1] ?? totalFrames, note: sliceIndexToNote(i),
     }));
     stateSave();
@@ -551,7 +552,7 @@ function fillBreak() {
     if (!slices.length) { alert('Carregue um sample e fatie primeiro.'); return; }
     pushUndo();
     const n = slices.length;
-    const t = sel.track;
+    const t = _sampleTrack;
     for (let s = 0; s < state.numSteps; s++) state.pattern[s][t] = makeCell();
     for (let i = 0; i < n && i < state.numSteps; i++) {
         const step = Math.round((i / n) * state.numSteps);
@@ -648,7 +649,7 @@ function trkBuildTable() {
                     sel = { step:s, track:t, col:c, endStep:s, endTrack:t };
                     _trkMouseDown = true;
                     trkRefreshSel();
-                    if (t !== prevTrack) refreshSamplePanel();
+                    if (t !== prevTrack) refreshSamplePanel(t);
                     if (e.button === 2) {
                         pushUndo();
                         const cell = state.pattern[s][t];
@@ -739,8 +740,41 @@ function trkRefreshCells(step, track) {
     stateSave();
 }
 
-function refreshSamplePanel() {
-    const t  = sel.track;
+function buildTrackSelector() {
+    const container = document.getElementById('sample-track-sel');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let t = 0; t < state.numTracks; t++) {
+        const btn = document.createElement('button');
+        btn.className = 'trk-sel-btn';
+        btn.dataset.t = t;
+        const sn = _savedSampleNames[t];
+        btn.innerHTML = `T${t+1}${sn ? `<span class="tsb-name">${sn.replace(/\.[^.]+$/,'').substring(0,10)}</span>` : ''}`;
+        btn.title = sn || `Track ${t+1} — sem sample`;
+        btn.addEventListener('click', () => {
+            _sampleTrack = t;
+            refreshSamplePanel();
+        });
+        container.appendChild(btn);
+    }
+    updateTrackSelector();
+}
+
+function updateTrackSelector() {
+    document.querySelectorAll('.trk-sel-btn').forEach(btn => {
+        const t  = parseInt(btn.dataset.t);
+        const sn = _savedSampleNames[t];
+        btn.classList.toggle('active', t === _sampleTrack);
+        btn.innerHTML = `T${t+1}${sn ? `<span class="tsb-name">${sn.replace(/\.[^.]+$/,'').substring(0,10)}</span>` : ''}`;
+        btn.title = sn || `Track ${t+1} — sem sample`;
+    });
+    const dz = document.querySelector('#dropzone .drop-text');
+    if (dz) dz.innerHTML = `DROP SAMPLE → T${_sampleTrack+1}<br><span>ou clique para abrir</span>`;
+}
+
+function refreshSamplePanel(newTrack) {
+    if (newTrack !== undefined) _sampleTrack = newTrack;
+    const t  = _sampleTrack;
     const sn = _savedSampleNames[t];
     document.getElementById('sample-name').textContent = sn || '';
     showKeyInfo(_keyInfos[t]);
@@ -749,6 +783,7 @@ function refreshSamplePanel() {
     const hasBuf = !!state.audioBuffers[t];
     ['btn-auto-slice','btn-clear-slices','btn-fill-break','btn-slice-8','btn-slice-16','btn-slice-32']
         .forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !hasBuf; });
+    updateTrackSelector();
 }
 
 document.addEventListener('keydown', e => {
@@ -869,7 +904,7 @@ function trkMove(dStep, dTrack, dCol) {
     sel.step  = ((sel.step  + dStep)  % state.numSteps   + state.numSteps)   % state.numSteps;
     sel.endStep = sel.step; sel.endTrack = sel.track;
     trkRefreshSel();
-    if (sel.track !== prevTrack) refreshSamplePanel();
+    if (sel.track !== prevTrack) refreshSamplePanel(sel.track);
 }
 
 function trkSetNote(step, track, note) {
@@ -1101,7 +1136,7 @@ async function loadSampleFile(file) {
 }
 
 async function loadSampleBuffer(name, ab) {
-    const t           = sel.track;
+    const t           = _sampleTrack;
     const ac          = getCtx();
     const pendingName = _savedSampleNames[t];
 
@@ -1131,6 +1166,7 @@ async function loadSampleBuffer(name, ab) {
 
     const nameEl = document.getElementById(`trk-sample-name-${t}`);
     if (nameEl) { nameEl.textContent = name.replace(/\.[^.]+$/, '').substring(0, 16); nameEl.title = name; }
+    updateTrackSelector();
     stateSave();
 }
 
@@ -1190,6 +1226,7 @@ function autoSlice() {
 window.addEventListener('DOMContentLoaded', () => {
     stateLoad();
     trkBuildTable();
+    buildTrackSelector();
     wfInit();
     kitsMount();
 
@@ -1216,7 +1253,9 @@ window.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('num-tracks').addEventListener('change', e => {
         state.numTracks = parseInt(e.target.value);
+        if (_sampleTrack >= state.numTracks) _sampleTrack = 0;
         state.pattern   = makePattern(state.numSteps, state.numTracks); trkBuildTable();
+        buildTrackSelector();
         stateSave();
     });
     document.getElementById('master-vol').addEventListener('input', e => {
@@ -1261,7 +1300,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('btn-auto-slice').addEventListener('click', autoSlice);
     document.getElementById('btn-clear-slices').addEventListener('click', () => {
-        state.trackSlices[sel.track] = [];
+        state.trackSlices[_sampleTrack] = [];
         wfDraw(); buildLegend(); updateSliceCount(); updateTimingInfo(); stateSave();
     });
     document.getElementById('btn-fill-break').addEventListener('click', fillBreak);
