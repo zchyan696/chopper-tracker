@@ -54,6 +54,15 @@ let _sampleTrack  = 0;
 function curBuf()    { return state.audioBuffers[_sampleTrack]; }
 function curSlices() { return state.trackSlices[_sampleTrack]; }
 
+function trackSlicesToSave(t) {
+    const buf = state.audioBuffers[t];
+    if (buf) {
+        const tot = buf.length;
+        return state.trackSlices[t].map(s => ({ sf: s.start/tot, ef: s.end/tot, note: s.note }));
+    }
+    return _pendingSliceFracs[t] || [];
+}
+
 function stateSave() {
     try {
         localStorage.setItem('amen-tracker-v2', JSON.stringify({
@@ -61,14 +70,10 @@ function stateSave() {
             numTracks: state.numTracks, swing: state.swing,
             pattern: state.pattern,
             muted: _trackMuted.slice(0, state.numTracks),
-            tracks: Array.from({length: state.numTracks}, (_, t) => {
-                const buf = state.audioBuffers[t];
-                const tot = buf?.length || 1;
-                return {
-                    sampleName: _savedSampleNames[t],
-                    slices: state.trackSlices[t].map(s => ({ sf: s.start/tot, ef: s.end/tot, note: s.note })),
-                };
-            }),
+            tracks: Array.from({length: state.numTracks}, (_, t) => ({
+                sampleName: _savedSampleNames[t],
+                slices: trackSlicesToSave(t),
+            })),
         }));
     } catch(_) {}
 }
@@ -1324,13 +1329,10 @@ window.addEventListener('DOMContentLoaded', () => {
             numTracks: state.numTracks, swing: state.swing,
             pattern: state.pattern,
             muted: _trackMuted.slice(0, state.numTracks),
-            tracks: Array.from({length: state.numTracks}, (_, t) => {
-                const buf = state.audioBuffers[t]; const tot = buf?.length || 1;
-                return {
-                    sampleName: _savedSampleNames[t],
-                    slices: state.trackSlices[t].map(s => ({ sf: s.start/tot, ef: s.end/tot, note: s.note })),
-                };
-            }),
+            tracks: Array.from({length: state.numTracks}, (_, t) => ({
+                sampleName: _savedSampleNames[t],
+                slices: trackSlicesToSave(t),
+            })),
         };
         const firstName = _savedSampleNames.find(n => n) || 'projeto';
         const blob = new Blob([JSON.stringify(proj, null, 2)], { type: 'application/json' });
