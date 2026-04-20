@@ -3,6 +3,9 @@ const BASE_OCTAVE = 4;
 const SLICE_KEYS  = ['Z','S','X','D','C','V','G','B','H','N','J','M','Q','2','W','3','E','R','5','T','6','Y','7','U'];
 
 let _trackMuted        = [false,false,false,false,false,false];
+let _trackSolo         = [false,false,false,false,false,false];
+let _trackVol          = [1.0,  1.0,  1.0,  1.0,  1.0,  1.0 ];
+let _trackPitch        = [0,    0,    0,    0,    0,    0    ];
 let _savedSampleNames  = ['','','','','',''];
 let _pendingSliceFracs = [null,null,null,null,null,null];
 let _keyInfos          = [null,null,null,null,null,null];
@@ -39,11 +42,37 @@ function makeCell()               { return { note: null, vol: 0xff, fx: null }; 
 function makeStep(n)              { return Array.from({ length: n }, makeCell); }
 function makePattern(steps, trks) { return Array.from({ length: steps }, () => makeStep(trks)); }
 
+function resizePattern(pat, newSteps, newTracks) {
+    return Array.from({length: newSteps}, (_, s) =>
+        Array.from({length: newTracks}, (_, t) => {
+            const c = pat[s]?.[t];
+            return c ? { note: c.note, vol: c.vol, fx: c.fx ? {...c.fx} : null } : makeCell();
+        })
+    );
+}
+
+function stretchPattern(pat, oldSteps, newSteps, numTracks) {
+    const newPat = makePattern(newSteps, numTracks);
+    for (let s = 0; s < oldSteps; s++) {
+        const ns = Math.round(s * newSteps / oldSteps);
+        if (ns >= newSteps) continue;
+        for (let t = 0; t < numTracks; t++) {
+            const src = pat[s]?.[t];
+            if (src?.note && !newPat[ns][t].note) {
+                newPat[ns][t] = { note: src.note, vol: src.vol, fx: src.fx ? {...src.fx} : null };
+            }
+        }
+    }
+    return newPat;
+}
+
 const state = {
     bpm: 174, lpb: 4, numSteps: 32, numTracks: 4, swing: 0,
     pattern: null,
     patterns: null,
     currentPage: 0,
+    arrangement: [0],
+    arrEnabled: false,
     audioBuffers: new Array(6).fill(null),
     trackSlices:  Array.from({length: 6}, () => []),
 };
@@ -73,10 +102,14 @@ function stateSave() {
             numTracks: state.numTracks, swing: state.swing,
             patterns: state.patterns,
             currentPage: state.currentPage,
+            arrangement: state.arrangement,
+            arrEnabled: state.arrEnabled,
             muted: _trackMuted.slice(0, state.numTracks),
             tracks: Array.from({length: state.numTracks}, (_, t) => ({
                 sampleName: _savedSampleNames[t],
                 slices: trackSlicesToSave(t),
+                vol: _trackVol[t],
+                pitch: _trackPitch[t],
             })),
         }));
     } catch(_) {}
@@ -103,12 +136,16 @@ function stateLoad() {
         }
         state.currentPage = Math.min(d.currentPage ?? 0, state.patterns.length - 1);
         state.pattern     = state.patterns[state.currentPage];
+        state.arrangement = Array.isArray(d.arrangement) && d.arrangement.length ? d.arrangement : [0];
+        state.arrEnabled  = !!d.arrEnabled;
         if (Array.isArray(d.muted)) d.muted.forEach((v,i) => { _trackMuted[i] = !!v; });
 
         if (!v1 && Array.isArray(d.tracks)) {
             d.tracks.forEach((tr, i) => {
                 _savedSampleNames[i]  = tr.sampleName || '';
                 _pendingSliceFracs[i] = tr.slices?.length ? tr.slices : null;
+                _trackVol[i]          = tr.vol   ?? 1.0;
+                _trackPitch[i]        = tr.pitch  ?? 0;
             });
         } else if (d.sampleName) {
             _savedSampleNames[0]  = d.sampleName;
@@ -187,7 +224,8 @@ function stopTrack(trackIdx, audioTime) {
 
 function scheduleCell(cell, stepDuration, audioTime, trackIdx) {
     if (!cell) return;
-    if (_trackMuted[trackIdx]) return;
+    const anySolo = _trackSolo.some((v, i) => i < state.numTracks && v);
+    if (_trackMuted[trackIdx] || (anySolo && !_trackSolo[trackIdx])) return;
     if (cell.note === 'OFF') { stopTrack(trackIdx, audioTime); return; }
     if (!cell.note) return;
     const si     = noteToSliceIndex(cell.note);
@@ -195,11 +233,11 @@ function scheduleCell(cell, stepDuration, audioTime, trackIdx) {
     const buf    = state.audioBuffers[trackIdx];
     if (si < 0 || si >= slices.length) return;
 
-    const vol = (cell.vol ?? 0xff) / 0xff;
-    let pitchSemi = 0, reverse = false, retrigger = 1, sampleOffset = 0, cutTime = 0;
+    const vol = (cell.vol ?? 0xff) / 0xff * (_trackVol[trackIdx] ?? 1.0);
+    let pitchSemi = _trackPitch[trackIdx] ?? 0, reverse = false, retrigger = 1, sampleOffset = 0, cutTime = 0;
     if (cell.fx) {
         const v = cell.fx.value;
-        if (cell.fx.type === 'P') pitchSemi = v;
+        if (cell.fx.type === 'P') pitchSemi += v;
         if (cell.fx.type === 'B') reverse   = true;
         if (cell.fx.type === 'R') retrigger = Math.max(1, v);
         if (cell.fx.type === 'S' && buf) {
@@ -278,6 +316,7 @@ function bpmFromFilename(name) {
 const SEQ_LOOKAHEAD = 0.12;
 const SEQ_TICK_MS   = 25;
 let _seqPlaying = false, _seqStep = 0, _seqNextTime = 0, _seqTimer = null, _seqOnStep = null;
+let _seqArrPos  = 0;
 
 function seqStepDur() { return 60 / (state.bpm * state.lpb); }
 
@@ -291,7 +330,19 @@ function seqTick() {
             scheduleCell(state.pattern[_seqStep]?.[t], dur, playAt, t);
         if (_seqOnStep) _seqOnStep(_seqStep);
         _seqNextTime += dur;
-        _seqStep = (_seqStep + 1) % state.numSteps;
+        _seqStep++;
+        if (_seqStep >= state.numSteps) {
+            _seqStep = 0;
+            if (state.arrEnabled && state.arrangement.length) {
+                _seqArrPos = (_seqArrPos + 1) % state.arrangement.length;
+                const next = state.arrangement[_seqArrPos];
+                if (next !== state.currentPage) {
+                    state.currentPage = next;
+                    state.pattern     = state.patterns[next] || state.patterns[0];
+                    setTimeout(() => { updatePageSel(); updateArrangeBar(); }, 0);
+                }
+            }
+        }
     }
     _seqTimer = setTimeout(seqTick, SEQ_TICK_MS);
 }
@@ -299,7 +350,14 @@ function seqTick() {
 function seqPlay(onStep) {
     if (_seqPlaying) return;
     _seqOnStep = onStep || null; _seqPlaying = true;
-    _seqStep = 0; _seqNextTime = getCtx().currentTime + 0.05;
+    _seqStep = 0; _seqArrPos = 0;
+    if (state.arrEnabled && state.arrangement.length) {
+        const start   = state.arrangement[0];
+        state.currentPage = start;
+        state.pattern     = state.patterns[start] || state.patterns[0];
+        updatePageSel(); updateArrangeBar();
+    }
+    _seqNextTime = getCtx().currentTime + 0.05;
     seqTick();
 }
 function seqStop() {
@@ -589,6 +647,35 @@ function equalSlices(n) {
 const QWERTY_LOWER = { z:0,s:1,x:2,d:3,c:4,v:5,g:6,b:7,h:8,n:9,j:10,m:11 };
 const QWERTY_UPPER = { q:0,2:1,w:2,3:3,e:4,r:5,5:6,t:7,6:8,y:9,7:10,u:11 };
 
+function buildArrangeBar() {
+    const container = document.getElementById('arrange-slots');
+    if (!container) return;
+    container.innerHTML = '';
+    state.arrangement.forEach((pageIdx, i) => {
+        const btn = document.createElement('button');
+        btn.className   = 'arr-slot' + (_seqArrPos === i && state.arrEnabled && _seqPlaying ? ' arr-active' : '');
+        btn.textContent = String.fromCharCode(65 + (pageIdx % 26));
+        btn.title       = `Slot ${i+1}: Padrão ${String.fromCharCode(65 + pageIdx)} — clique para trocar, right-click para remover`;
+        btn.addEventListener('click', () => {
+            state.arrangement[i] = (state.arrangement[i] + 1) % state.patterns.length;
+            buildArrangeBar(); stateSave();
+        });
+        btn.addEventListener('contextmenu', e => {
+            e.preventDefault();
+            state.arrangement.splice(i, 1);
+            if (!state.arrangement.length) state.arrangement = [0];
+            buildArrangeBar(); stateSave();
+        });
+        container.appendChild(btn);
+    });
+}
+
+function updateArrangeBar() {
+    document.querySelectorAll('.arr-slot').forEach((btn, i) => {
+        btn.classList.toggle('arr-active', _seqArrPos === i && state.arrEnabled && _seqPlaying);
+    });
+}
+
 function switchPage(n) {
     state.currentPage = Math.max(0, Math.min(n, state.patterns.length - 1));
     state.pattern     = state.patterns[state.currentPage];
@@ -643,9 +730,11 @@ function trkBuildTable() {
         th.colSpan = 3; th.style.textAlign = 'center';
 
         const topRow = document.createElement('div');
-        topRow.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:4px;margin-bottom:2px';
-        const lbl = document.createElement('span'); lbl.textContent = `TRACK ${t+1} `;
-        const mb  = document.createElement('button');
+        topRow.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:3px;margin-bottom:2px;flex-wrap:wrap';
+        const lbl = document.createElement('span'); lbl.textContent = `T${t+1}`;
+        lbl.style.cssText = 'font-size:9px;color:#777;letter-spacing:1px';
+
+        const mb = document.createElement('button');
         mb.className = 'btn-mute'; mb.textContent = 'M';
         mb.classList.toggle('muted', !!_trackMuted[t]);
         mb.addEventListener('click', e => {
@@ -653,7 +742,125 @@ function trkBuildTable() {
             _trackMuted[t] = !_trackMuted[t];
             mb.classList.toggle('muted', _trackMuted[t]); stateSave();
         });
-        topRow.appendChild(lbl); topRow.appendChild(mb);
+
+        const sb = document.createElement('button');
+        sb.className = 'btn-solo'; sb.textContent = 'S';
+        sb.classList.toggle('soloed', !!_trackSolo[t]);
+        sb.addEventListener('click', e => {
+            e.stopPropagation();
+            _trackSolo[t] = !_trackSolo[t];
+            sb.classList.toggle('soloed', _trackSolo[t]);
+        });
+
+        const clrBtn = document.createElement('button');
+        clrBtn.className = 'btn-trk-action'; clrBtn.textContent = 'CLR';
+        clrBtn.title = 'Limpar notas desta track no pattern atual';
+        clrBtn.addEventListener('click', e => {
+            e.stopPropagation(); pushUndo();
+            for (let s = 0; s < state.numSteps; s++) {
+                const cell = state.pattern[s][t];
+                cell.note = null; cell.vol = 0xff; cell.fx = null;
+            }
+            state.audioBuffers[t]   = null;
+            state.trackSlices[t]    = [];
+            _pendingSliceFracs[t]   = null;
+            _savedSampleNames[t]    = '';
+            _trackVol[t]            = 1.0;
+            _trackPitch[t]          = 0;
+            if (_sampleTrack === t) refreshSamplePanel();
+            trkBuildTable(); stateSave();
+        });
+
+        const rndBtn = document.createElement('button');
+        rndBtn.className = 'btn-trk-action'; rndBtn.textContent = 'RND';
+        rndBtn.title = 'Preencher com notas aleatórias';
+        rndBtn.addEventListener('click', e => {
+            e.stopPropagation(); pushUndo();
+            const slices = state.trackSlices[t];
+            if (!slices.length) return;
+            const lpb      = state.lpb;
+            const halfBeat = Math.max(1, Math.floor(lpb / 2));
+            const quarter  = Math.max(1, Math.floor(lpb / 4));
+
+            for (let s = 0; s < state.numSteps; s++) {
+                const cell = state.pattern[s][t];
+
+                // probability by rhythmic position
+                let prob = 0.10;
+                if      (s === 0)               prob = 1.00; // downbeat always
+                else if (s % lpb === 0)         prob = 0.75; // beat
+                else if (s % halfBeat === 0)    prob = 0.40; // half-beat
+                else if (s % quarter === 0)     prob = 0.22; // quarter
+
+                if (Math.random() < prob) {
+                    // weighted slice: 60% chance of picking from first third (fundamental hits)
+                    const pool = Math.random() < 0.60
+                        ? Math.min(Math.ceil(slices.length / 3), slices.length)
+                        : slices.length;
+                    const si = Math.floor(Math.random() * pool);
+                    cell.note = sliceIndexToNote(si);
+
+                    // velocity: mostly loud, some medium, rare ghost
+                    const vr = Math.random();
+                    if      (vr < 0.12) cell.vol = 0x30 + Math.floor(Math.random() * 0x40); // ghost
+                    else if (vr < 0.30) cell.vol = 0xA0 + Math.floor(Math.random() * 0x40); // medium
+                    else                cell.vol = 0xff;
+
+                    // occasional retrigger FX on offbeats
+                    if (s % lpb !== 0 && Math.random() < 0.15) {
+                        cell.fx = { type: 'R', value: [2, 3, 4][Math.floor(Math.random() * 3)] };
+                    } else {
+                        cell.fx = null;
+                    }
+                } else {
+                    cell.note = null; cell.vol = 0xff; cell.fx = null;
+                }
+            }
+            trkBuildTable(); stateSave();
+        });
+
+        topRow.appendChild(lbl); topRow.appendChild(mb); topRow.appendChild(sb);
+        topRow.appendChild(clrBtn); topRow.appendChild(rndBtn);
+
+        const volRow = document.createElement('div');
+        volRow.style.cssText = 'display:flex;align-items:center;gap:4px;justify-content:center;margin-bottom:2px';
+        const volLbl = document.createElement('span'); volLbl.textContent = 'VOL'; volLbl.style.cssText = 'font-size:8px;color:#555';
+        const volSlider = document.createElement('input');
+        volSlider.type = 'range'; volSlider.min = 0; volSlider.max = 150; volSlider.step = 1;
+        volSlider.value = Math.round((_trackVol[t] ?? 1.0) * 100);
+        volSlider.className = 'trk-vol-slider';
+        const volVal = document.createElement('span'); volVal.className = 'trk-vol-val';
+        volVal.textContent = volSlider.value + '%';
+        volSlider.addEventListener('input', () => {
+            _trackVol[t] = parseInt(volSlider.value) / 100;
+            volVal.textContent = volSlider.value + '%';
+            stateSave();
+        });
+        volRow.appendChild(volLbl); volRow.appendChild(volSlider); volRow.appendChild(volVal);
+
+        const pitchRow = document.createElement('div');
+        pitchRow.style.cssText = 'display:flex;align-items:center;gap:3px;justify-content:center;margin-bottom:2px';
+        const pitchLbl = document.createElement('span'); pitchLbl.textContent = 'TUNE'; pitchLbl.style.cssText = 'font-size:8px;color:#555';
+        const pitchDn  = document.createElement('button'); pitchDn.className = 'btn-trk-action'; pitchDn.textContent = '−';
+        const pitchVal = document.createElement('span'); pitchVal.className = 'trk-pitch-val';
+        const showPitch = v => { pitchVal.textContent = (v > 0 ? '+' : '') + v; pitchVal.style.color = v === 0 ? '#444' : '#c09030'; };
+        showPitch(_trackPitch[t] ?? 0);
+        const pitchUp  = document.createElement('button'); pitchUp.className = 'btn-trk-action'; pitchUp.textContent = '+';
+        pitchDn.addEventListener('click', e => {
+            e.stopPropagation();
+            _trackPitch[t] = Math.max(-24, (_trackPitch[t] ?? 0) - 1);
+            showPitch(_trackPitch[t]); stateSave();
+        });
+        pitchUp.addEventListener('click', e => {
+            e.stopPropagation();
+            _trackPitch[t] = Math.min(24, (_trackPitch[t] ?? 0) + 1);
+            showPitch(_trackPitch[t]); stateSave();
+        });
+        pitchVal.addEventListener('dblclick', e => {
+            e.stopPropagation();
+            _trackPitch[t] = 0; showPitch(0); stateSave();
+        });
+        pitchRow.appendChild(pitchLbl); pitchRow.appendChild(pitchDn); pitchRow.appendChild(pitchVal); pitchRow.appendChild(pitchUp);
 
         const nameEl = document.createElement('div');
         nameEl.id        = `trk-sample-name-${t}`;
@@ -662,7 +869,7 @@ function trkBuildTable() {
         nameEl.textContent = sn ? sn.replace(/\.[^.]+$/, '').substring(0, 16) : '';
         nameEl.title = sn || '';
 
-        th.appendChild(topRow); th.appendChild(nameEl);
+        th.appendChild(topRow); th.appendChild(volRow); th.appendChild(pitchRow); th.appendChild(nameEl);
         hr1.appendChild(th);
         if (t < state.numTracks - 1) {
             const sep = document.createElement('th'); sep.className = 'track-sep'; hr1.appendChild(sep);
@@ -991,31 +1198,39 @@ function trkClearCell() {
 const AUDIO_EXTS = new Set(['wav','mp3','aif','aiff','ogg','flac']);
 let _kitsAll = [], _kitsFiltered = [], _kitsPreviewCtx = null, _kitsPreviewSrc = null;
 let _kitsUseHttp = false;
+let _kitsDirStack = []; // [{name, handle?, node?}]
+let _kitsHttpTree  = null;
 
 function kitsMount() {
     document.getElementById('kits-search').addEventListener('input', e => kitsFilter(e.target.value));
     document.getElementById('btn-change-folder').addEventListener('click', kitsOpenFolder);
-    const list = document.getElementById('kits-list');
-    list.addEventListener('click', e => {
-        const li = e.target.closest('li[data-idx]'); if (!li) return;
-        kitsSelect(li, parseInt(li.dataset.idx), false);
+}
+
+function buildHttpTree(files) {
+    const root = { dirs: {}, files: [] };
+    files.forEach(f => {
+        const parts = f.path.split('/');
+        let node = root;
+        for (let i = 0; i < parts.length - 1; i++) {
+            const p = parts[i];
+            if (!node.dirs[p]) node.dirs[p] = { dirs: {}, files: [] };
+            node = node.dirs[p];
+        }
+        node.files.push(f);
     });
-    list.addEventListener('dblclick', e => {
-        const li = e.target.closest('li[data-idx]'); if (!li) return;
-        kitsSelect(li, parseInt(li.dataset.idx), true);
-    });
+    return root;
 }
 
 async function kitsTryHttp() {
     try {
         const r = await fetch('./kits-index.json');
         if (!r.ok) return false;
-        const paths   = await r.json();
-        _kitsAll       = paths.map(p => ({ name: p.split('/').pop(), path: p }));
-        _kitsFiltered  = _kitsAll;
-        _kitsUseHttp   = true;
-        document.getElementById('kits-status').textContent = `${_kitsAll.length} samples`;
-        kitsRender(_kitsAll);
+        const paths = await r.json();
+        _kitsAll     = paths.map(p => ({ name: p.split('/').pop(), path: p }));
+        _kitsUseHttp = true;
+        _kitsHttpTree = buildHttpTree(_kitsAll);
+        _kitsDirStack = [{ name: 'kits', node: _kitsHttpTree, handle: null }];
+        await kitsRenderDir();
         return true;
     } catch (_) { return false; }
 }
@@ -1024,6 +1239,11 @@ async function kitsOpenFolder() {
     if (!window.showDirectoryPicker) { alert('Use Chrome ou Edge.'); return; }
     try {
         const dir = await window.showDirectoryPicker({ mode: 'read' });
+        _kitsUseHttp  = false;
+        _kitsAll      = [];
+        _kitsDirStack = [{ name: dir.name, handle: dir, node: null }];
+        document.getElementById('kits-search').value = '';
+        await kitsRenderDir();
         document.getElementById('kits-status').textContent = 'scanning...';
         const results = [];
         async function scan(dh, base) {
@@ -1031,37 +1251,105 @@ async function kitsOpenFolder() {
                 if (name.startsWith('.') || name.startsWith('__')) continue;
                 const fp = base ? `${base}/${name}` : name;
                 if (handle.kind === 'directory') await scan(handle, fp);
-                else if (handle.kind === 'file' && AUDIO_EXTS.has(name.split('.').pop().toLowerCase()))
+                else if (AUDIO_EXTS.has(name.split('.').pop().toLowerCase()))
                     results.push({ name, path: fp, handle });
             }
         }
         await scan(dir, '');
-        _kitsAll = results; _kitsFiltered = results; _kitsUseHttp = false;
-        document.getElementById('kits-status').textContent = `${results.length} samples`;
-        kitsRender(results);
+        _kitsAll = results;
+        document.getElementById('kits-status').textContent = `${results.length} samples total`;
     } catch (e) {
         if (e.name !== 'AbortError')
             document.getElementById('kits-status').textContent = 'erro: ' + e.message;
     }
 }
 
-function kitsFilter(q) {
-    const lq = q.toLowerCase().trim();
-    _kitsFiltered = lq ? _kitsAll.filter(f => f.path.toLowerCase().includes(lq)) : _kitsAll;
-    kitsRender(_kitsFiltered);
-    document.getElementById('kits-status').textContent = `${_kitsFiltered.length} / ${_kitsAll.length} samples`;
+async function kitsEnter(name, handle, node) {
+    _kitsDirStack.push({ name, handle: handle || null, node: node || null });
+    document.getElementById('kits-search').value = '';
+    await kitsRenderDir();
 }
 
-function kitsRender(files) {
+async function kitsGoTo(i) {
+    _kitsDirStack.splice(i + 1);
+    await kitsRenderDir();
+}
+
+async function kitsRenderDir() {
+    const cur  = _kitsDirStack[_kitsDirStack.length - 1];
     const list = document.getElementById('kits-list');
     list.innerHTML = '';
-    files.forEach((f, i) => {
-        const li    = document.createElement('li'); li.dataset.idx = i;
-        const parts = f.path.split('/'); const fname = parts.pop(); const fdir = parts.join('/');
-        if (fdir) { const ds = document.createElement('span'); ds.className = 'kit-dir'; ds.textContent = fdir + '/'; li.appendChild(ds); }
-        const ns = document.createElement('span'); ns.className = 'kit-name'; ns.textContent = fname; li.appendChild(ns);
+    let dirs = [], files = [];
+
+    if (_kitsUseHttp && cur.node) {
+        dirs  = Object.entries(cur.node.dirs).map(([name, node]) => ({ name, node })).sort((a,b) => a.name.localeCompare(b.name));
+        files = [...cur.node.files].sort((a,b) => a.name.localeCompare(b.name));
+    } else if (!_kitsUseHttp && cur.handle) {
+        for await (const [name, handle] of cur.handle.entries()) {
+            if (name.startsWith('.') || name.startsWith('__')) continue;
+            if (handle.kind === 'directory') dirs.push({ name, handle });
+            else if (AUDIO_EXTS.has(name.split('.').pop().toLowerCase())) files.push({ name, handle });
+        }
+        dirs.sort((a,b)  => a.name.localeCompare(b.name));
+        files.sort((a,b) => a.name.localeCompare(b.name));
+    }
+
+    dirs.forEach(d => {
+        const li = document.createElement('li');
+        li.className = 'kit-folder-item';
+        li.innerHTML = `<span class="kit-folder-icon">▶</span><span class="kit-folder-name">${d.name}</span>`;
+        li.addEventListener('click',    () => kitsEnter(d.name, d.handle || null, d.node || null));
         list.appendChild(li);
     });
+
+    _kitsFiltered = files;
+    files.forEach((f, i) => {
+        const li = document.createElement('li'); li.dataset.idx = i;
+        const ns = document.createElement('span'); ns.className = 'kit-name'; ns.textContent = f.name;
+        li.appendChild(ns);
+        li.addEventListener('click',    () => kitsSelect(li, i, false));
+        li.addEventListener('dblclick', () => kitsSelect(li, i, true));
+        list.appendChild(li);
+    });
+
+    kitsBreadcrumb();
+    document.getElementById('kits-status').textContent = `${dirs.length > 0 ? dirs.length + ' pastas · ' : ''}${files.length} samples`;
+}
+
+function kitsBreadcrumb() {
+    const bc = document.getElementById('kits-breadcrumb');
+    if (!bc) return;
+    bc.innerHTML = '';
+    _kitsDirStack.forEach((item, i) => {
+        const span = document.createElement('span');
+        span.className = 'kit-bc';
+        span.textContent = item.name;
+        span.addEventListener('click', () => kitsGoTo(i));
+        bc.appendChild(span);
+        if (i < _kitsDirStack.length - 1) {
+            const sep = document.createElement('span'); sep.className = 'kit-bc-sep'; sep.textContent = ' › ';
+            bc.appendChild(sep);
+        }
+    });
+}
+
+function kitsFilter(q) {
+    const lq = q.toLowerCase().trim();
+    if (!lq) { kitsRenderDir(); return; }
+    _kitsFiltered = _kitsAll.filter(f => f.path.toLowerCase().includes(lq) || f.name.toLowerCase().includes(lq));
+    const list = document.getElementById('kits-list');
+    list.innerHTML = '';
+    _kitsFiltered.forEach((f, i) => {
+        const li = document.createElement('li'); li.dataset.idx = i;
+        const parts = f.path.split('/'); parts.pop(); const fdir = parts.join('/');
+        if (fdir) { const ds = document.createElement('span'); ds.className = 'kit-dir'; ds.textContent = fdir + '/'; li.appendChild(ds); }
+        const ns = document.createElement('span'); ns.className = 'kit-name'; ns.textContent = f.name; li.appendChild(ns);
+        li.addEventListener('click',    () => kitsSelect(li, i, false));
+        li.addEventListener('dblclick', () => kitsSelect(li, i, true));
+        list.appendChild(li);
+    });
+    const bc = document.getElementById('kits-breadcrumb'); if (bc) bc.innerHTML = '';
+    document.getElementById('kits-status').textContent = `${_kitsFiltered.length} resultados`;
 }
 
 async function kitsSelect(li, idx, load) {
@@ -1100,10 +1388,12 @@ function kitsStopPreview() {
     if (_kitsPreviewSrc) { try { _kitsPreviewSrc.stop(); } catch(_){} _kitsPreviewSrc = null; }
 }
 
-async function exportWav() {
+async function exportWav(pageIndices) {
+    const pages    = pageIndices && pageIndices.length ? pageIndices : [state.currentPage];
     const sr       = 44100;
     const stepDur  = 60 / (state.bpm * state.lpb);
-    const totalDur = stepDur * state.numSteps + 2;
+    const pageDur  = stepDur * state.numSteps;
+    const totalDur = pageDur * pages.length + 2;
     const offCtx   = new OfflineAudioContext(2, Math.ceil(totalDur * sr), sr);
     const master   = offCtx.createGain(); master.gain.value = 0.9; master.connect(offCtx.destination);
     let hasContent = false;
@@ -1122,38 +1412,42 @@ async function exportWav() {
         return out;
     }
 
-    for (let s = 0; s < state.numSteps; s++) {
-        const swing    = (s % 2 === 1) ? stepDur * (state.swing / 100) : 0;
-        const baseTime = s * stepDur + swing;
-        for (let t = 0; t < state.numTracks; t++) {
-            const cell = state.pattern[s]?.[t]; if (!cell?.note || cell.note === 'OFF') continue;
-            const si   = noteToSliceIndex(cell.note);
-            const buf  = state.audioBuffers[t]; const slices = state.trackSlices[t];
-            if (si < 0 || si >= slices.length || !buf) continue;
-            hasContent = true;
-            const vol  = (cell.vol ?? 0xff) / 0xff;
-            let pitchSemi = 0, reverse = false, retrigger = 1, sampleOffset = 0, cutTime = 0;
-            if (cell.fx) {
-                const fv = cell.fx.value;
-                if (cell.fx.type === 'P') pitchSemi = fv;
-                if (cell.fx.type === 'B') reverse   = true;
-                if (cell.fx.type === 'R') retrigger = Math.max(1, fv);
-                if (cell.fx.type === 'S') sampleOffset = (fv / 0xff) * (slices[si].end - slices[si].start) / buf.sampleRate;
-                if (cell.fx.type === 'C') cutTime = (fv / 0xff) * stepDur;
+    pages.forEach((pageIdx, pi) => {
+        const pattern  = state.patterns[pageIdx] || state.patterns[0];
+        const pageBase = pi * pageDur;
+        for (let s = 0; s < state.numSteps; s++) {
+            const swing    = (s % 2 === 1) ? stepDur * (state.swing / 100) : 0;
+            const baseTime = pageBase + s * stepDur + swing;
+            for (let t = 0; t < state.numTracks; t++) {
+                const cell = pattern[s]?.[t]; if (!cell?.note || cell.note === 'OFF') continue;
+                const si   = noteToSliceIndex(cell.note);
+                const buf  = state.audioBuffers[t]; const slices = state.trackSlices[t];
+                if (si < 0 || si >= slices.length || !buf) continue;
+                hasContent = true;
+                const vol  = (cell.vol ?? 0xff) / 0xff * (_trackVol[t] ?? 1.0);
+                let pitchSemi = _trackPitch[t] ?? 0, reverse = false, retrigger = 1, sampleOffset = 0, cutTime = 0;
+                if (cell.fx) {
+                    const fv = cell.fx.value;
+                    if (cell.fx.type === 'P') pitchSemi += fv;
+                    if (cell.fx.type === 'B') reverse   = true;
+                    if (cell.fx.type === 'R') retrigger = Math.max(1, fv);
+                    if (cell.fx.type === 'S') sampleOffset = (fv / 0xff) * (slices[si].end - slices[si].start) / buf.sampleRate;
+                    if (cell.fx.type === 'C') cutTime = (fv / 0xff) * stepDur;
+                }
+                const sched = t0 => {
+                    const sbuf = extractOff(si, reverse, t); if (!sbuf) return;
+                    const src  = offCtx.createBufferSource();
+                    src.buffer = sbuf; src.playbackRate.value = Math.pow(2, pitchSemi / 12);
+                    const g    = offCtx.createGain(); g.gain.value = Math.max(0, Math.min(2, vol));
+                    src.connect(g); g.connect(master);
+                    src.start(t0, Math.max(0, Math.min(sampleOffset, sbuf.duration - 0.001)));
+                    if (cutTime > 0) src.stop(t0 + cutTime);
+                };
+                if (retrigger > 1) { const iv = stepDur / retrigger; for (let i = 0; i < retrigger; i++) sched(baseTime + i * iv); }
+                else sched(baseTime);
             }
-            const sched = t0 => {
-                const sbuf = extractOff(si, reverse, t); if (!sbuf) return;
-                const src  = offCtx.createBufferSource();
-                src.buffer = sbuf; src.playbackRate.value = Math.pow(2, pitchSemi / 12);
-                const g    = offCtx.createGain(); g.gain.value = Math.max(0, Math.min(2, vol));
-                src.connect(g); g.connect(master);
-                src.start(t0, Math.max(0, Math.min(sampleOffset, sbuf.duration - 0.001)));
-                if (cutTime > 0) src.stop(t0 + cutTime);
-            };
-            if (retrigger > 1) { const iv = stepDur / retrigger; for (let i = 0; i < retrigger; i++) sched(baseTime + i * iv); }
-            else sched(baseTime);
         }
-    }
+    });
 
     if (!hasContent) throw new Error('Sem notas no padrão.');
     return bufToWav(await offCtx.startRendering());
@@ -1300,26 +1594,27 @@ window.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('lpb').addEventListener('change', e => {
         const oldLpb   = state.lpb;
-        state.lpb      = parseInt(e.target.value) || 4;
-        const beats    = state.numSteps / oldLpb;
-        const newSteps = Math.round(beats * state.lpb);
-        const valid    = [16, 32, 64];
-        state.numSteps = valid.reduce((a, b) => Math.abs(b - newSteps) < Math.abs(a - newSteps) ? b : a);
+        const oldSteps = state.numSteps;
+        state.lpb      = Math.max(1, parseInt(e.target.value) || 4);
+        const beats    = oldSteps / oldLpb;
+        state.numSteps = Math.max(8, Math.min(256, Math.round(beats * state.lpb)));
         document.getElementById('steps').value = state.numSteps;
-        state.patterns = state.patterns.map(() => makePattern(state.numSteps, state.numTracks));
+        state.patterns = state.patterns.map(p => stretchPattern(p, oldSteps, state.numSteps, state.numTracks));
         state.pattern  = state.patterns[state.currentPage];
         trkBuildTable(); wfDraw(); updateTimingInfo(); stateSave();
     });
     document.getElementById('steps').addEventListener('change', e => {
-        state.numSteps = parseInt(e.target.value);
-        state.patterns = state.patterns.map(() => makePattern(state.numSteps, state.numTracks));
+        const newSteps = Math.max(8, Math.min(256, parseInt(e.target.value) || state.numSteps));
+        e.target.value = newSteps;
+        state.numSteps = newSteps;
+        state.patterns = state.patterns.map(p => resizePattern(p, state.numSteps, state.numTracks));
         state.pattern  = state.patterns[state.currentPage];
         trkBuildTable(); wfDraw(); updateTimingInfo(); stateSave();
     });
     document.getElementById('num-tracks').addEventListener('change', e => {
         state.numTracks = parseInt(e.target.value);
         if (_sampleTrack >= state.numTracks) _sampleTrack = 0;
-        state.patterns = state.patterns.map(() => makePattern(state.numSteps, state.numTracks));
+        state.patterns = state.patterns.map(p => resizePattern(p, state.numSteps, state.numTracks));
         state.pattern  = state.patterns[state.currentPage];
         trkBuildTable(); buildTrackSelector(); stateSave();
     });
@@ -1336,6 +1631,41 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-page-add'  ).addEventListener('click', () => addPage(false));
     document.getElementById('btn-page-clone').addEventListener('click', () => addPage(true));
     document.getElementById('btn-page-del'  ).addEventListener('click', delPage);
+
+    buildArrangeBar();
+    const btnArrToggle = document.getElementById('btn-arr-toggle');
+    btnArrToggle.textContent = state.arrEnabled ? 'ON' : 'OFF';
+    if (state.arrEnabled) btnArrToggle.classList.add('on');
+    btnArrToggle.addEventListener('click', () => {
+        state.arrEnabled = !state.arrEnabled;
+        btnArrToggle.textContent = state.arrEnabled ? 'ON' : 'OFF';
+        btnArrToggle.classList.toggle('on', state.arrEnabled);
+        stateSave();
+    });
+    document.getElementById('btn-arr-add').addEventListener('click', () => {
+        state.arrangement.push(state.currentPage);
+        buildArrangeBar(); stateSave();
+    });
+    document.getElementById('btn-arr-clear').addEventListener('click', () => {
+        state.arrangement = [state.currentPage];
+        buildArrangeBar(); stateSave();
+    });
+
+    document.getElementById('btn-export-arr').addEventListener('click', async () => {
+        const btn = document.getElementById('btn-export-arr');
+        btn.textContent = '... rendering'; btn.disabled = true;
+        try {
+            const pages = state.arrEnabled && state.arrangement.length
+                ? state.arrangement
+                : state.patterns.map((_, i) => i);
+            const blob = await exportWav(pages);
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = 'amen-full.wav'; a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) { alert('Erro: ' + err.message); }
+        finally { btn.textContent = '↓ ALL'; btn.disabled = false; }
+    });
 
     document.getElementById('btn-slice-8' ).addEventListener('click', () => equalSlices(8));
     document.getElementById('btn-slice-16').addEventListener('click', () => equalSlices(16));
@@ -1393,10 +1723,14 @@ window.addEventListener('DOMContentLoaded', () => {
             numTracks: state.numTracks, swing: state.swing,
             patterns: state.patterns,
             currentPage: state.currentPage,
+            arrangement: state.arrangement,
+            arrEnabled: state.arrEnabled,
             muted: _trackMuted.slice(0, state.numTracks),
             tracks: Array.from({length: state.numTracks}, (_, t) => ({
                 sampleName: _savedSampleNames[t],
                 slices: trackSlicesToSave(t),
+                vol: _trackVol[t],
+                pitch: _trackPitch[t],
             })),
         };
         const firstName = _savedSampleNames.find(n => n) || 'projeto';
@@ -1429,6 +1763,8 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
                 state.currentPage = Math.min(d.currentPage ?? 0, state.patterns.length - 1);
                 state.pattern     = state.patterns[state.currentPage];
+                state.arrangement = Array.isArray(d.arrangement) && d.arrangement.length ? d.arrangement : [0];
+                state.arrEnabled  = !!d.arrEnabled;
                 if (Array.isArray(d.muted)) d.muted.forEach((v,i) => { _trackMuted[i] = !!v; });
 
                 if (Array.isArray(d.tracks)) {
@@ -1437,6 +1773,8 @@ window.addEventListener('DOMContentLoaded', () => {
                         const fracs     = tr.slices?.length ? tr.slices : null;
                         _savedSampleNames[i]  = savedName;
                         _pendingSliceFracs[i] = fracs;
+                        _trackVol[i]          = tr.vol   ?? 1.0;
+                        _trackPitch[i]        = tr.pitch  ?? 0;
                         const buf = state.audioBuffers[i];
                         if (buf && fracs && savedName) {
                             const total = buf.length;
@@ -1459,7 +1797,10 @@ window.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('num-tracks').value = state.numTracks;
                 document.getElementById('swing').value      = state.swing;
                 document.getElementById('swing-val').textContent = state.swing + '%';
-                trkBuildTable(); buildPageSel(); refreshSamplePanel(); stateSave();
+                trkBuildTable(); buildPageSel(); buildArrangeBar(); refreshSamplePanel();
+                const tog = document.getElementById('btn-arr-toggle');
+                if (tog) { tog.textContent = state.arrEnabled ? 'ON' : 'OFF'; tog.classList.toggle('on', state.arrEnabled); }
+                stateSave();
             } catch(err) { alert('Erro ao carregar projeto: ' + err.message); }
         };
         reader.readAsText(file); projInput.value = '';
