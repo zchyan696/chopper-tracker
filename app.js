@@ -38,7 +38,7 @@ function sliceIndexToNote(i) {
     const name = NOTE_NAMES[((i % 12) + 12) % 12];
     return `${name}${oct}`;
 }
-function makeCell()               { return { note: null, vol: 0xff, fx: null }; }
+function makeCell()               { return { note: null, vol: 0xff, volCmd: null, fx: null }; }
 function makeStep(n)              { return Array.from({ length: n }, makeCell); }
 function makePattern(steps, trks) { return Array.from({ length: steps }, () => makeStep(trks)); }
 
@@ -167,7 +167,7 @@ function stateLoad() {
 let _audioCtx   = null;
 let _masterGain = null;
 let _masterVol  = 0.9;
-const _lastSrc  = {};
+const _lastTrack = {}; // trackIdx -> { src, gain }
 
 function getCtx() {
     if (!_audioCtx) {
@@ -213,13 +213,13 @@ function playSliceAt(sliceIndex, opts, startTime, trackIdx) {
     const offset = Math.max(0, Math.min(sampleOffset, sliceBuf.duration - 0.001));
     src.start(startTime, offset);
     if (cutTime > 0) src.stop(startTime + cutTime);
-    if (trackIdx !== undefined) _lastSrc[trackIdx] = src;
+    if (trackIdx !== undefined) _lastTrack[trackIdx] = { src, gain };
     return src;
 }
 
 function stopTrack(trackIdx, audioTime) {
-    const src = _lastSrc[trackIdx];
-    if (src) { try { src.stop(audioTime); } catch (_) {} delete _lastSrc[trackIdx]; }
+    const t = _lastTrack[trackIdx];
+    if (t) { try { t.src.stop(audioTime); } catch (_) {} delete _lastTrack[trackIdx]; }
 }
 
 function scheduleCell(cell, stepDuration, audioTime, trackIdx) {
@@ -227,7 +227,16 @@ function scheduleCell(cell, stepDuration, audioTime, trackIdx) {
     const anySolo = _trackSolo.some((v, i) => i < state.numTracks && v);
     if (_trackMuted[trackIdx] || (anySolo && !_trackSolo[trackIdx])) return;
     if (cell.note === 'OFF') { stopTrack(trackIdx, audioTime); return; }
-    if (!cell.note) return;
+    if (!cell.note) {
+        if (cell.volCmd !== null && cell.volCmd !== undefined) {
+            const trk = _lastTrack[trackIdx];
+            if (trk?.gain) {
+                const v = (cell.volCmd / 0xff) * (_trackVol[trackIdx] ?? 1.0);
+                trk.gain.gain.setValueAtTime(Math.max(0, Math.min(2, v)), audioTime);
+            }
+        }
+        return;
+    }
     const si     = noteToSliceIndex(cell.note);
     const slices = state.trackSlices[trackIdx];
     const buf    = state.audioBuffers[trackIdx];
@@ -957,14 +966,18 @@ function trkUpdateCell(tdOrNull, step, track, col) {
         if (cell.note === 'OFF') { text = 'OFF'; isOff = true; }
         else { text = cell.note ?? '---'; empty = !cell.note; }
     } else if (col === 1) {
-        if (!cell.note || cell.note === 'OFF') { text = '--'; empty = true; }
-        else text = (cell.vol ?? 0xff).toString(16).toUpperCase().padStart(2,'0');
+        if (!cell.note || cell.note === 'OFF') {
+            if (cell.volCmd !== null && cell.volCmd !== undefined) {
+                text = cell.volCmd.toString(16).toUpperCase().padStart(2,'0');
+            } else { text = '--'; empty = true; }
+        } else text = (cell.vol ?? 0xff).toString(16).toUpperCase().padStart(2,'0');
     } else {
         text = fxStr(cell.fx); empty = !cell.fx;
     }
     td.textContent = text;
     td.classList.toggle('cell-empty', empty);
     td.classList.toggle('cell-off', isOff);
+    td.classList.toggle('cell-volcmd', col === 1 && !cell.note && cell.volCmd !== null && cell.volCmd !== undefined);
 }
 
 function fxStr(fx) {
@@ -1133,12 +1146,16 @@ document.addEventListener('keydown', e => {
     }
     if (col === 1) {
         if (/^[0-9a-f]$/i.test(key)) {
-            const cell = state.pattern[step]?.[track];
-            if (!cell?.note || cell.note === 'OFF') return;
+            const cell = state.pattern[step]?.[track]; if (!cell) return;
             pushUndo();
-            const cur = (cell.vol ?? 0xff).toString(16).padStart(2,'0');
-            cell.vol  = parseInt(cur[1] + key, 16);
-            trkRefreshCells(step, track); return;
+            if (cell.note && cell.note !== 'OFF') {
+                const cur = (cell.vol ?? 0xff).toString(16).padStart(2,'0');
+                cell.vol = parseInt(cur[1] + key, 16);
+            } else {
+                const cur = (cell.volCmd ?? 0x00).toString(16).padStart(2,'0');
+                cell.volCmd = parseInt(cur[1] + key, 16);
+            }
+            trkRefreshCells(step, track); trkMove(1, 0, 0); return;
         }
     }
     if (col === 2) { pushUndo(); trkFxKey(key, step, track); }
@@ -1190,7 +1207,7 @@ function trkClearCell() {
     const { step, track, col } = sel;
     const cell = state.pattern[step]?.[track]; if (!cell) return;
     if (col === 0) { cell.note = null; cell.fx = null; }
-    if (col === 1) cell.vol = 0xff;
+    if (col === 1) { if (cell.note && cell.note !== 'OFF') cell.vol = 0xff; else cell.volCmd = null; }
     if (col === 2) cell.fx = null;
     trkRefreshCells(step, track);
 }
@@ -1396,6 +1413,10 @@ async function exportWav(pageIndices) {
     const totalDur = pageDur * pages.length + 2;
     const offCtx   = new OfflineAudioContext(2, Math.ceil(totalDur * sr), sr);
     const master   = offCtx.createGain(); master.gain.value = 0.9; master.connect(offCtx.destination);
+    // per-track gain nodes so volCmd can automate volume mid-pattern
+    const offTrackGain = Array.from({length: state.numTracks}, (_, t) => {
+        const g = offCtx.createGain(); g.gain.value = _trackVol[t] ?? 1.0; g.connect(master); return g;
+    });
     let hasContent = false;
 
     function extractOff(si, reverse, t) {
@@ -1419,12 +1440,20 @@ async function exportWav(pageIndices) {
             const swing    = (s % 2 === 1) ? stepDur * (state.swing / 100) : 0;
             const baseTime = pageBase + s * stepDur + swing;
             for (let t = 0; t < state.numTracks; t++) {
-                const cell = pattern[s]?.[t]; if (!cell?.note || cell.note === 'OFF') continue;
+                const cell = pattern[s]?.[t]; if (!cell) continue;
+                // volCmd without note
+                if (!cell.note && cell.volCmd !== null && cell.volCmd !== undefined) {
+                    const v = (cell.volCmd / 0xff);
+                    offTrackGain[t].gain.setValueAtTime(Math.max(0, Math.min(2, v)), baseTime);
+                    hasContent = true;
+                    continue;
+                }
+                if (!cell.note || cell.note === 'OFF') continue;
                 const si   = noteToSliceIndex(cell.note);
                 const buf  = state.audioBuffers[t]; const slices = state.trackSlices[t];
                 if (si < 0 || si >= slices.length || !buf) continue;
                 hasContent = true;
-                const vol  = (cell.vol ?? 0xff) / 0xff * (_trackVol[t] ?? 1.0);
+                const vol  = (cell.vol ?? 0xff) / 0xff;
                 let pitchSemi = _trackPitch[t] ?? 0, reverse = false, retrigger = 1, sampleOffset = 0, cutTime = 0;
                 if (cell.fx) {
                     const fv = cell.fx.value;
@@ -1439,7 +1468,7 @@ async function exportWav(pageIndices) {
                     const src  = offCtx.createBufferSource();
                     src.buffer = sbuf; src.playbackRate.value = Math.pow(2, pitchSemi / 12);
                     const g    = offCtx.createGain(); g.gain.value = Math.max(0, Math.min(2, vol));
-                    src.connect(g); g.connect(master);
+                    src.connect(g); g.connect(offTrackGain[t]);
                     src.start(t0, Math.max(0, Math.min(sampleOffset, sbuf.duration - 0.001)));
                     if (cutTime > 0) src.stop(t0 + cutTime);
                 };
@@ -1565,6 +1594,7 @@ function showKeyInfo(result) {
         `<span class="key-hz">${result.freq}Hz</span>`;
 }
 
+
 function autoSlice() {
     if (!curBuf()) return;
     const sens   = parseInt(document.getElementById('sensitivity').value);
@@ -1586,7 +1616,10 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        btn.addEventListener('click', () => {
+            if (btn.dataset.tab === 'analyze') { window.open('analyze.html', '_blank'); return; }
+            switchTab(btn.dataset.tab);
+        });
     });
 
     document.getElementById('bpm').addEventListener('change', e => {

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SAMPLE ANALYZER</title>
+    <style>
+        :root {
+            --bg:     #0c0c0c;
+            --bg2:    #141414;
+            --bg3:    #1c1c1c;
+            --border: #2a2a2a;
+            --text:   #c8c8c8;
+            --dim:    #555;
+            --note:   #e8e040;
+            --accent: #4a90d9;
+            --font:   'Courier New', Courier, monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 12px;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── HEADER ── */
+        #az-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 7px 14px;
+            background: #0a0a0a;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .az-logo { font-size: 13px; font-weight: bold; color: #e05050; letter-spacing: 2px; }
+        #az-filename { font-size: 11px; color: var(--accent); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        #az-status { font-size: 10px; color: var(--dim); letter-spacing: 1px; }
+
+        /* ── BODY: two-column ── */
+        #az-body {
+            display: flex;
+            flex-direction: row;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ── LEFT PANEL ── */
+        #az-left {
+            width: 210px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 10px;
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+        }
+
+        /* ── RIGHT PANEL ── */
+        #az-right {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        /* ── DROP ZONE ── */
+        #az-dropzone {
+            border: 1px dashed #333;
+            text-align: center;
+            padding: 14px 6px;
+            cursor: pointer;
+            position: relative;
+            transition: border-color 0.2s;
+        }
+        #az-dropzone:hover, #az-dropzone.drag-over { border-color: var(--accent); }
+        #az-dropzone input[type="file"] { position:absolute; inset:0; opacity:0; cursor:pointer; }
+        .az-drop-text { color:var(--dim); font-size:10px; letter-spacing:1px; line-height:1.8; pointer-events:none; }
+        .az-drop-text span { font-size:9px; color:#333; }
+        #az-dropzone.loaded { padding:6px 8px; border-style:solid; border-color:#252525; }
+
+        /* ── BUTTONS ── */
+        button {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 11px;
+            padding: 5px 12px;
+            cursor: pointer;
+            letter-spacing: 1px;
+            outline: none;
+        }
+        button:hover { background: #2a2a2a; color: #fff; }
+        button:disabled { opacity:0.3; cursor:default; }
+        button:disabled:hover { background:var(--bg3); color:var(--text); }
+        #az-btn-play { color:#70d870; border-color:#2a4a2a; }
+        #az-btn-play.active { background:#1a3a1a; color:#90f090; }
+        #az-btn-stop { color:#e05050; border-color:#4a2a2a; }
+        #az-btn-analyze { color:var(--accent); border-color:#1a3050; }
+
+        /* ── CONTROLS (stacked in left) ── */
+        #az-controls { display:flex; flex-direction:column; gap:5px; }
+        #az-controls button { width:100%; }
+        #az-time { font-size:11px; color:var(--dim); text-align:center; letter-spacing:1px; padding:2px 0; }
+        .az-lbl { font-size:10px; color:var(--dim); letter-spacing:1px; white-space:nowrap; }
+        .az-vol-row { display:flex; align-items:center; gap:6px; }
+        #az-vol { accent-color:#4a90d9; height:14px; cursor:pointer; flex:1; }
+
+        /* ── WAVEFORM ── */
+        #az-waveform {
+            width: 100%;
+            height: 130px;
+            display: block;
+            background: #080808;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        /* ── CHORD TIMELINE ── */
+        #az-chord-timeline-wrap { display:none; flex-direction:column; gap:4px; flex-shrink:0; }
+        #az-chord-timeline {
+            position: relative;
+            height: 34px;
+            background: #080808;
+            border: 1px solid var(--border);
+            overflow: hidden;
+            cursor: pointer;
+        }
+        .az-chord-block {
+            position:absolute; top:0; bottom:0;
+            display:flex; align-items:center; justify-content:center;
+            overflow:hidden;
+            border-right:1px solid rgba(0,0,0,0.35);
+            cursor:pointer;
+            transition:filter 0.1s;
+        }
+        .az-chord-block:hover { filter:brightness(1.4); }
+        .az-chord-block span {
+            font-size:10px; font-family:var(--font); font-weight:bold;
+            color:rgba(255,255,255,0.92);
+            text-shadow:0 1px 3px rgba(0,0,0,0.9);
+            white-space:nowrap; overflow:hidden; padding:0 3px;
+            pointer-events:none;
+        }
+
+        /* ── KEYBOARD ── */
+        #az-kb-wrap { display:none; flex-direction:column; gap:4px; flex-shrink:0; }
+        #az-kb { width:100%; height:110px; display:block; background:#080808; border:1px solid var(--border); cursor:pointer; }
+        .az-kb-label { font-size:9px; color:var(--dim); letter-spacing:2px; }
+        .az-kb-hint  { font-size:9px; color:#333; }
+
+        /* ── PIANO ROLL ── */
+        #az-pr-wrap { display:none; flex-direction:column; gap:4px; flex:1; min-height:200px; }
+        #az-pianoroll { width:100%; flex:1; display:block; background:#090909; border:1px solid #2a2a2a; cursor:pointer; min-height:200px; }
+
+        /* ── RESULTS (left panel) ── */
+        #az-results { display:flex; flex-direction:column; gap:8px; }
+        .az-section { display:flex; flex-direction:column; gap:4px; }
+        .az-section-label { font-size:9px; color:var(--dim); letter-spacing:2px; }
+        .az-hint { font-size:9px; color:#333; }
+        .az-warn { font-size:9px; color:#e0a030; background:#181200; border:1px solid #3a2800; padding:3px 6px; }
+
+        /* key name */
+        #az-key-row { padding:6px 0; border-bottom:1px solid var(--border); margin-bottom:2px; }
+        #az-key-name { font-size:26px; color:var(--note); font-weight:bold; letter-spacing:2px; display:block; line-height:1.1; }
+        #az-key-conf { font-size:10px; color:var(--dim); display:block; margin-top:3px; }
+
+        /* tuning */
+        .az-tune-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:2px 0; }
+        .az-tune-label { font-size:9px; color:var(--dim); letter-spacing:2px; }
+        .az-tune-val   { font-size:10px; font-family:var(--font); }
+        .az-tune-meter { position:relative; height:8px; background:#111; border:1px solid #2a2a2a; width:100%; }
+        .az-tune-center { position:absolute; left:50%; top:0; bottom:0; width:1px; background:#333; }
+        .az-tune-needle { position:absolute; width:3px; top:0; bottom:0; transform:translateX(-50%); transition:left 0.3s; }
+        .az-tune-l, .az-tune-r { position:absolute; top:100%; margin-top:2px; font-size:8px; color:#333; }
+        .az-tune-l { left:2px; } .az-tune-r { right:2px; }
+
+        /* tally */
+        #az-tally { display:flex; flex-direction:column; gap:3px; }
+        .az-pill { display:flex; align-items:center; gap:5px; padding:3px 7px; border:1px solid #252525; background:#111; }
+        .az-pill-dot  { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+        .az-pill-name { color:var(--text); font-size:11px; }
+        .az-pill-pct  { color:var(--dim); font-size:10px; margin-left:auto; }
+
+        /* chroma */
+        #az-chroma { display:flex; height:52px; align-items:flex-end; gap:2px; background:#080808; border:1px solid var(--border); padding:4px 4px 0; }
+        .az-chr-col { flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; }
+        .az-chr-bar { width:100%; min-height:1px; }
+        .az-chr-lbl { font-size:7px; color:#444; margin-top:2px; white-space:nowrap; }
+
+        /* shortcuts panel */
+        #az-shortcuts { margin-top:auto; padding-top:10px; border-top:1px solid #1a1a1a; }
+        .az-sc-title { font-size:9px; color:#333; letter-spacing:2px; margin-bottom:5px; }
+        .az-sc-row { display:flex; justify-content:space-between; font-size:9px; color:#333; padding:2px 0; gap:8px; }
+        .az-sc-key { color:#444; font-size:9px; white-space:nowrap; font-weight:bold; }
+
+        /* tuning buttons */
+        .az-tune-btns { display:flex; gap:4px; margin-top:5px; }
+        .az-tune-btns button { flex:1; font-size:9px; padding:3px 4px; letter-spacing:0.5px; }
+        .az-tune-btns button.active { background:#1a3050; color:#6ab0f9; border-color:#4a90d9; }
+
+        /* scale selectors */
+        .az-sel {
+            background: #141414;
+            border: 1px solid #2a2a2a;
+            color: #666;
+            font-family: var(--font);
+            font-size: 9px;
+            padding: 2px 4px;
+            outline: none;
+            cursor: pointer;
+            letter-spacing: 0.5px;
+        }
+        .az-sel:focus { border-color: var(--accent); color: var(--text); }
+        .az-sel option { background: #141414; }
+
+        #az-analyzing { font-size:11px; color:var(--accent); letter-spacing:2px; padding:4px 0; display:none; flex-shrink:0; }
+    </style>
+</head>
+<body>
+
+<header id="az-header">
+    <div class="az-logo">▓ SAMPLE ANALYZER</div>
+    <div id="az-filename">nenhum sample carregado</div>
+    <div id="az-status"></div>
+</header>
+
+<div id="az-body">
+
+    <!-- ── LEFT: controls + results ── -->
+    <aside id="az-left">
+        <div id="az-dropzone">
+            <div class="az-drop-text">DROP SAMPLE<br><span>ou clique para abrir</span></div>
+            <input type="file" id="az-file-input" accept="audio/*">
+        </div>
+
+        <div id="az-controls">
+            <button id="az-btn-play" disabled>▶ PLAY</button>
+            <button id="az-btn-stop" disabled>■ STOP</button>
+            <div id="az-time">--:--.-- / --:--.--</div>
+            <div class="az-vol-row">
+                <span class="az-lbl">VOL</span>
+                <input type="range" id="az-vol" min="0" max="100" value="90">
+            </div>
+            <button id="az-btn-analyze" disabled>⟳ ANALISAR</button>
+            <button id="az-btn-export" disabled>↓ EXPORTAR WAV</button>
+        </div>
+
+        <div id="az-results"></div>
+
+        <div id="az-shortcuts">
+            <div class="az-sc-title">SHORTCUTS</div>
+            <div class="az-sc-row"><span class="az-sc-key">SPACE</span><span>play / pause</span></div>
+            <div class="az-sc-row"><span class="az-sc-key">ESC</span><span>stop + rewind</span></div>
+            <div class="az-sc-row"><span class="az-sc-key">← →</span><span>seek ±2s</span></div>
+            <div class="az-sc-row"><span class="az-sc-key">⇧ ← →</span><span>seek ±10s</span></div>
+            <div class="az-sc-row"><span class="az-sc-key">R</span><span>re-analisar</span></div>
+            <div class="az-sc-row"><span class="az-sc-key">O</span><span>abrir arquivo</span></div>
+            <div class="az-sc-title" style="margin-top:8px">PIANO ROLL</div>
+            <div class="az-sc-row"><span class="az-sc-key">scroll</span><span>zoom horizontal</span></div>
+            <div class="az-sc-row"><span class="az-sc-key">ctrl+scroll</span><span>zoom vertical</span></div>
+            <div class="az-sc-row"><span class="az-sc-key">drag</span><span>pan</span></div>
+            <div class="az-sc-row"><span class="az-sc-key">dblclick</span><span>reset zoom</span></div>
+        </div>
+    </aside>
+
+    <!-- ── RIGHT: all visuals ── -->
+    <main id="az-right">
+        <canvas id="az-waveform"></canvas>
+
+        <div id="az-chord-timeline-wrap">
+            <div class="az-section-label">ACORDES <span class="az-hint" style="margin-left:4px">· click = seek</span></div>
+            <div id="az-chord-timeline"></div>
+            <div id="az-chord-hint" class="az-hint"></div>
+        </div>
+
+        <div id="az-kb-wrap">
+            <div style="display:flex;align-items:baseline;gap:8px">
+                <span class="az-kb-label">TECLADO</span>
+                <span class="az-kb-hint">notas do acorde acendem · click = ouvir nota</span>
+            </div>
+            <canvas id="az-kb" height="110"></canvas>
+        </div>
+
+        <div id="az-pr-wrap">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="az-kb-label">PIANO ROLL</span>
+                <span class="az-kb-hint">scroll=zoom · ctrl+scroll=zoom vertical · drag=pan · dblclick=reset · click=seek</span>
+                <div style="margin-left:auto;display:flex;align-items:center;gap:4px;flex-shrink:0">
+                    <button id="az-pr-reset" onclick="resetPRView()" style="font-size:9px;padding:2px 6px;letter-spacing:0.5px" title="Resetar zoom/pan">⊡ RESET</button>
+                    <span class="az-lbl" style="font-size:9px">ESCALA</span>
+                    <select id="az-scale-root" class="az-sel">
+                        <option value="-1">AUTO</option>
+                        <option value="0">C</option><option value="1">C#</option>
+                        <option value="2">D</option><option value="3">D#</option>
+                        <option value="4">E</option><option value="5">F</option>
+                        <option value="6">F#</option><option value="7">G</option>
+                        <option value="8">G#</option><option value="9">A</option>
+                        <option value="10">A#</option><option value="11">B</option>
+                    </select>
+                    <select id="az-scale-mode" class="az-sel">
+                        <option value="auto">AUTO</option>
+                        <option value="major">MAIOR</option>
+                        <option value="minor">MENOR</option>
+                        <option value="dorian">DÓRIAN</option>
+                        <option value="mixolydian">MIXOLIDIAN</option>
+                        <option value="pentatonic_major">PENT. MAIOR</option>
+                        <option value="pentatonic_minor">PENT. MENOR</option>
+                        <option value="blues">BLUES</option>
+                    </select>
+                </div>
+            </div>
+            <canvas id="az-pianoroll" style="width:100%;display:block;background:#090909;border:1px solid #2a2a2a;cursor:pointer;flex:1;min-height:200px"></canvas>
+        </div>
+
+        <div id="az-analyzing">analisando...</div>
+    </main>
+
+</div>
+
+<script src="analyzer.js"></script>
+</body>
+</html>
