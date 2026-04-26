@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>SYNTH</title>
+    <style>
+        :root {
+            --bg:     #0c0c0c;
+            --bg2:    #141414;
+            --bg3:    #1c1c1c;
+            --border: #2a2a2a;
+            --text:   #c8c8c8;
+            --dim:    #555;
+            --accent: #4a90d9;
+            --green:  #70d870;
+            --red:    #e05050;
+            --yellow: #e8e040;
+            --font:   'Courier New', Courier, monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 12px;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* HEADER */
+        #sy-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 7px 14px;
+            background: #0a0a0a;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .sy-logo { font-size: 13px; font-weight: bold; color: #9050e0; letter-spacing: 2px; }
+        #sy-status { font-size: 10px; color: var(--dim); letter-spacing: 1px; flex: 1; }
+
+        /* BODY */
+        #sy-body {
+            display: flex;
+            flex-direction: row;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* LEFT */
+        #sy-left {
+            width: 220px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 10px;
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+        }
+
+        /* RIGHT */
+        #sy-right {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        /* SECTION LABEL */
+        .sy-sec {
+            font-size: 10px;
+            color: var(--dim);
+            letter-spacing: 2px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 4px;
+            margin-bottom: 2px;
+        }
+
+        /* CATEGORY BUTTONS */
+        #sy-cats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+        }
+        .sy-cat {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            font-family: var(--font);
+            font-size: 11px;
+            padding: 7px 4px;
+            cursor: pointer;
+            letter-spacing: 2px;
+            text-align: center;
+            outline: none;
+            transition: all 0.1s;
+        }
+        .sy-cat:hover { color: var(--text); border-color: #444; }
+        .sy-cat.active { color: #fff; border-color: var(--accent); background: #1a2535; }
+        .sy-cat[data-cat="BASS"].active  { border-color: #e05050; background: #2a1010; color: #f08080; }
+        .sy-cat[data-cat="PLUCK"].active { border-color: #e8e040; background: #252500; color: #f0e060; }
+        .sy-cat[data-cat="LEAD"].active  { border-color: #50d050; background: #102510; color: #80f080; }
+        .sy-cat[data-cat="PAD"].active   { border-color: #9050e0; background: #1a0a2a; color: #c080f0; }
+        .sy-cat[data-cat="KEYS"].active  { border-color: #4a90d9; background: #0a1a2a; color: #80c0f0; }
+        .sy-cat[data-cat="FX"].active    { border-color: #e08020; background: #251500; color: #f0b060; }
+
+        /* MACROS */
+        #sy-macros { display: flex; flex-direction: column; gap: 8px; }
+        .sy-macro { display: flex; flex-direction: column; gap: 3px; }
+        .sy-macro-header { display: flex; justify-content: space-between; align-items: center; }
+        .sy-macro-name { font-size: 10px; color: var(--dim); letter-spacing: 1px; }
+        .sy-macro-labels { display: flex; justify-content: space-between; font-size: 9px; color: #333; }
+        .sy-macro-val { font-size: 10px; color: var(--accent); min-width: 28px; text-align: right; }
+        input[type=range].sy-slider {
+            width: 100%;
+            height: 18px;
+            accent-color: var(--accent);
+            cursor: pointer;
+            background: transparent;
+        }
+        input[type=range].sy-slider::-webkit-slider-runnable-track {
+            background: #222;
+            height: 3px;
+            border-radius: 2px;
+        }
+        input[type=range].sy-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--accent);
+            margin-top: -4.5px;
+            cursor: pointer;
+        }
+
+        /* PRESETS */
+        #sy-presets { display: flex; flex-direction: column; gap: 4px; }
+        .sy-preset {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            font-family: var(--font);
+            font-size: 10px;
+            padding: 5px 8px;
+            cursor: pointer;
+            letter-spacing: 1px;
+            text-align: left;
+            outline: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .sy-preset:hover { color: var(--text); border-color: #444; background: var(--bg3); }
+        .sy-preset .sy-preset-desc { font-size: 9px; color: #333; }
+
+        /* PLAY MODES */
+        #sy-modes {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        .sy-mode {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            font-family: var(--font);
+            font-size: 10px;
+            padding: 5px 10px;
+            cursor: pointer;
+            letter-spacing: 1px;
+            outline: none;
+        }
+        .sy-mode:hover { color: var(--text); border-color: #444; }
+        .sy-mode.active { color: #fff; background: #1a2535; border-color: var(--accent); }
+
+        /* PLAY / STOP / EXPORT */
+        #sy-actions { display: flex; gap: 6px; align-items: center; }
+        #sy-btn-play {
+            background: #0a1a0a; border: 1px solid #2a4a2a; color: var(--green);
+            font-family: var(--font); font-size: 12px; padding: 7px 18px;
+            cursor: pointer; letter-spacing: 1px; outline: none; flex: 1;
+        }
+        #sy-btn-play:hover { background: #1a3a1a; }
+        #sy-btn-play.playing { color: #90f090; background: #1a3a1a; }
+        #sy-btn-stop {
+            background: #1a0a0a; border: 1px solid #4a2020; color: var(--red);
+            font-family: var(--font); font-size: 12px; padding: 7px 14px;
+            cursor: pointer; letter-spacing: 1px; outline: none;
+        }
+        #sy-btn-stop:hover { background: #2a1010; }
+        #sy-btn-export {
+            background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+            font-family: var(--font); font-size: 11px; padding: 7px 14px;
+            cursor: pointer; letter-spacing: 1px; outline: none;
+        }
+        #sy-btn-export:hover { background: #2a2a2a; }
+
+        /* WAVEFORM PREVIEW */
+        #sy-waveform {
+            width: 100%;
+            height: 80px;
+            background: #080808;
+            border: 1px solid var(--border);
+            display: block;
+            flex-shrink: 0;
+        }
+
+        /* KEYBOARD */
+        #sy-kb-wrap {
+            position: relative;
+            flex-shrink: 0;
+        }
+        #sy-kb {
+            width: 100%;
+            height: 90px;
+            display: block;
+            background: #111;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* LOOP DISPLAY */
+        #sy-loop-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        #sy-loop-canvas {
+            width: 100%;
+            height: 40px;
+            background: #080808;
+            border: 1px solid var(--border);
+            display: block;
+        }
+        #sy-loop-info {
+            font-size: 10px;
+            color: var(--dim);
+            letter-spacing: 1px;
+            text-align: center;
+        }
+
+        /* VOLUME ROW */
+        .sy-vol-row { display: flex; align-items: center; gap: 6px; }
+        .sy-lbl { font-size: 10px; color: var(--dim); letter-spacing: 1px; white-space: nowrap; }
+
+        /* OCTAVE */
+        #sy-oct-row { display: flex; align-items: center; gap: 6px; }
+        .sy-oct-btn {
+            background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+            font-family: var(--font); font-size: 12px; padding: 3px 10px;
+            cursor: pointer; outline: none;
+        }
+        .sy-oct-btn:hover { background: #2a2a2a; }
+        #sy-oct-display { font-size: 11px; color: var(--accent); letter-spacing: 1px; min-width: 30px; text-align: center; }
+
+        /* SHORTCUTS */
+        #sy-shortcuts {
+            border: 1px solid var(--border);
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .sy-shortcut { display: flex; justify-content: space-between; font-size: 10px; color: #333; }
+        .sy-shortcut kbd { color: #555; }
+
+        /* SAVE PRESET */
+        #sy-save-row {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        #sy-preset-name {
+            flex: 1;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 10px;
+            padding: 4px 6px;
+            outline: none;
+            letter-spacing: 1px;
+            min-width: 0;
+        }
+        #sy-preset-name:focus { border-color: var(--accent); }
+        #sy-preset-name::placeholder { color: #333; }
+        #sy-btn-save {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            font-family: var(--font);
+            font-size: 10px;
+            padding: 4px 8px;
+            cursor: pointer;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            outline: none;
+        }
+        #sy-btn-save:hover { color: var(--text); border-color: #444; }
+
+        .sy-preset-custom {
+            position: relative;
+        }
+        .sy-preset-del {
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #333;
+            font-size: 12px;
+            cursor: pointer;
+            padding: 0 2px;
+            line-height: 1;
+            font-family: var(--font);
+        }
+        .sy-preset-del:hover { color: var(--red); background: none; }
+
+        .sy-preset-tag {
+            font-size: 8px;
+            color: #9050e0;
+            letter-spacing: 1px;
+            margin-left: 4px;
+        }
+
+        /* NOTE indicator */
+        #sy-note-indicator {
+            font-size: 11px;
+            color: var(--yellow);
+            letter-spacing: 2px;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        /* scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: #2a2a2a; }
+    </style>
+</head>
+<body>
+    <div id="sy-header">
+        <span class="sy-logo">SYNTH</span>
+        <span id="sy-status">pronto</span>
+        <span id="sy-note-indicator"></span>
+    </div>
+
+    <div id="sy-body">
+
+        <!-- LEFT: category + macros + presets -->
+        <aside id="sy-left">
+
+            <div class="sy-sec">CATEGORIA</div>
+            <div id="sy-cats">
+                <button class="sy-cat active" data-cat="BASS">BASS</button>
+                <button class="sy-cat" data-cat="PLUCK">PLUCK</button>
+                <button class="sy-cat" data-cat="LEAD">LEAD</button>
+                <button class="sy-cat" data-cat="PAD">PAD</button>
+                <button class="sy-cat" data-cat="KEYS">KEYS</button>
+                <button class="sy-cat" data-cat="FX">FX</button>
+            </div>
+
+            <div class="sy-sec">MACROS</div>
+            <div id="sy-macros">
+                <!-- generated by JS -->
+            </div>
+
+            <div class="sy-sec">PRESETS</div>
+            <div id="sy-save-row">
+                <input type="text" id="sy-preset-name" placeholder="nome do preset..." maxlength="20">
+                <button id="sy-btn-save" onclick="saveCustomPreset()">+ SALVAR</button>
+            </div>
+            <div id="sy-presets">
+                <!-- generated by JS -->
+            </div>
+
+            <div class="sy-sec">ATALHOS</div>
+            <div id="sy-shortcuts">
+                <div class="sy-shortcut"><span>tocar/parar</span><kbd>Space</kbd></div>
+                <div class="sy-shortcut"><span>oitava ↑↓</span><kbd>Ctrl+↑↓</kbd></div>
+                <div class="sy-shortcut"><span>notas (QWERTY)</span><kbd>A S D F G H J</kbd></div>
+                <div class="sy-shortcut"><span>exportar</span><kbd>E</kbd></div>
+                <div class="sy-shortcut"><span>próximo preset</span><kbd>]</kbd></div>
+                <div class="sy-shortcut"><span>preset anterior</span><kbd>[</kbd></div>
+            </div>
+
+        </aside>
+
+        <!-- RIGHT: waveform + keyboard + controls -->
+        <main id="sy-right">
+
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                <div class="sy-sec" style="flex:1;margin:0;">PREVIEW</div>
+                <div id="sy-modes">
+                    <button class="sy-mode active" data-mode="note">NOTE</button>
+                    <button class="sy-mode" data-mode="chord">CHORD</button>
+                    <button class="sy-mode" data-mode="scale">SCALE</button>
+                    <button class="sy-mode" data-mode="loop">LOOP</button>
+                    <button class="sy-mode" data-mode="keys">TECLADO</button>
+                </div>
+            </div>
+
+            <canvas id="sy-waveform"></canvas>
+
+            <div id="sy-loop-wrap" style="display:none;">
+                <canvas id="sy-loop-canvas"></canvas>
+                <div id="sy-loop-info">· · ·</div>
+            </div>
+
+            <div id="sy-kb-wrap">
+                <canvas id="sy-kb"></canvas>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                <div class="sy-sec" style="margin:0;">OITAVA</div>
+                <div id="sy-oct-row">
+                    <button class="sy-oct-btn" onclick="changeOctave(-1)">▼</button>
+                    <span id="sy-oct-display">C3</span>
+                    <button class="sy-oct-btn" onclick="changeOctave(+1)">▲</button>
+                </div>
+                <div style="flex:1;"></div>
+                <div class="sy-vol-row">
+                    <span class="sy-lbl">VOL</span>
+                    <input type="range" id="sy-vol" class="sy-slider" min="0" max="1" step="0.01" value="0.7" style="width:80px;">
+                </div>
+            </div>
+
+            <div id="sy-actions">
+                <button id="sy-btn-play" onclick="togglePlay()">▶ TOCAR</button>
+                <button id="sy-btn-stop" onclick="stopAll()">■ STOP</button>
+                <button id="sy-btn-export" onclick="exportWAV()">↓ WAV</button>
+            </div>
+
+        </main>
+    </div>
+
+    <script src="synth.js"></script>
+</body>
+</html>

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>SAMPLER</title>
+<style>
+:root {
+    --bg:     #0c0c0c;
+    --bg2:    #141414;
+    --bg3:    #1c1c1c;
+    --border: #2a2a2a;
+    --text:   #c8c8c8;
+    --dim:    #555;
+    --accent: #4a90d9;
+    --orange: #e87020;
+    --green:  #70d870;
+    --red:    #e05050;
+    --yellow: #e8e040;
+    --font:   'Courier New', Courier, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: 12px;
+    height: 100%; overflow: hidden;
+    display: flex; flex-direction: column;
+}
+
+/* HEADER */
+#sm-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 7px 14px; background: #0a0a0a;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.sm-logo { font-size: 13px; font-weight: bold; color: var(--orange); letter-spacing: 2px; }
+#sm-filename { font-size: 11px; color: var(--accent); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sm-srv-dot { width: 7px; height: 7px; border-radius: 50%; background: #333; flex-shrink: 0; }
+#sm-srv-dot.on  { background: var(--green); box-shadow: 0 0 4px var(--green); }
+#sm-srv-dot.off { background: var(--red); }
+#sm-srv-label { font-size: 10px; color: var(--dim); letter-spacing: 1px; }
+
+/* WAVEFORM AREA */
+#sm-wave-wrap {
+    position: relative; flex-shrink: 0;
+    background: #080808; border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column;
+}
+#sm-ruler {
+    display: block; width: 100%; height: 18px;
+    background: #0a0a0a; border-bottom: 1px solid #1a1a1a;
+    flex-shrink: 0; cursor: default;
+}
+#sm-waveform {
+    display: block; width: 100%; height: 140px; cursor: crosshair;
+    user-select: none; flex-shrink: 0;
+}
+#sm-overview {
+    display: block; width: 100%; height: 28px;
+    background: #050505; border-top: 1px solid #1a1a1a;
+    cursor: pointer; flex-shrink: 0; user-select: none;
+}
+/* tooltip de tempo flutuante */
+#sm-time-tooltip {
+    position: fixed; display: none;
+    background: #0a0a0a; border: 1px solid var(--orange);
+    color: var(--orange); font-family: var(--font);
+    font-size: 10px; padding: 2px 6px; letter-spacing: 1px;
+    pointer-events: none; z-index: 100;
+}
+#sm-wave-info {
+    position: absolute; bottom: 30px; right: 10px;
+    font-size: 10px; color: #2a2a2a; letter-spacing: 1px; pointer-events: none;
+}
+
+/* BODY */
+#sm-body {
+    display: flex; flex: 1; overflow: hidden;
+}
+
+/* LEFT */
+#sm-left {
+    width: 210px; flex-shrink: 0; display: flex;
+    flex-direction: column; gap: 8px; padding: 10px;
+    border-right: 1px solid var(--border); overflow-y: auto;
+}
+
+/* RIGHT */
+#sm-right {
+    flex: 1; min-width: 0; display: flex;
+    flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto;
+}
+
+/* SECTION LABEL */
+.sm-sec {
+    font-size: 10px; color: var(--dim); letter-spacing: 2px;
+    border-bottom: 1px solid var(--border); padding-bottom: 3px;
+}
+
+/* DROP ZONE */
+#sm-drop {
+    border: 1px dashed #333; text-align: center;
+    padding: 12px 6px; cursor: pointer; position: relative;
+    transition: border-color 0.2s; flex-shrink: 0;
+}
+#sm-drop:hover, #sm-drop.over { border-color: var(--orange); }
+#sm-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.sm-drop-text { color: var(--dim); font-size: 10px; letter-spacing: 1px; line-height: 2; pointer-events: none; }
+#sm-drop.loaded { padding: 5px 8px; border-style: solid; border-color: #252525; }
+
+/* URL INPUT */
+#sm-url-row { display: flex; gap: 5px; }
+#sm-url {
+    flex: 1; background: var(--bg2); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--font); font-size: 10px;
+    padding: 5px 7px; outline: none; min-width: 0;
+}
+#sm-url:focus { border-color: var(--accent); }
+#sm-url::placeholder { color: #333; }
+#sm-btn-fetch {
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--dim); font-family: var(--font); font-size: 10px;
+    padding: 5px 8px; cursor: pointer; outline: none; white-space: nowrap;
+}
+#sm-btn-fetch:hover { color: var(--text); border-color: #444; }
+#sm-btn-fetch.loading { color: var(--orange); border-color: var(--orange); }
+
+/* PROGRESS BAR */
+#sm-progress-wrap { display: none; height: 3px; background: #1a1a1a; border-radius: 2px; }
+#sm-progress { height: 100%; background: var(--orange); border-radius: 2px; width: 0%; transition: width 0.3s; }
+
+/* BUTTONS */
+button {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    font-family: var(--font); font-size: 11px; padding: 5px 10px;
+    cursor: pointer; letter-spacing: 1px; outline: none;
+}
+button:hover { background: #2a2a2a; color: #fff; }
+button:disabled { opacity: 0.3; cursor: default; }
+button:disabled:hover { background: var(--bg3); color: var(--text); }
+
+/* CONTROLS */
+#sm-controls { display: flex; flex-direction: column; gap: 5px; }
+#sm-controls button { width: 100%; }
+#sm-btn-play  { color: var(--green); border-color: #2a4a2a; }
+#sm-btn-play.active { background: #1a3a1a; color: #90f090; }
+#sm-btn-stop  { color: var(--red); border-color: #4a2020; }
+#sm-btn-loop  { color: var(--dim); border-color: var(--border); }
+#sm-btn-loop.active { color: var(--orange); border-color: #7a4010; background: #251505; }
+#sm-time-display {
+    font-size: 11px; color: var(--dim); text-align: center;
+    letter-spacing: 1px; padding: 2px 0;
+}
+
+/* VOLUME */
+.sm-vol-row { display: flex; align-items: center; gap: 6px; }
+.sm-lbl { font-size: 10px; color: var(--dim); letter-spacing: 1px; white-space: nowrap; }
+#sm-vol { accent-color: var(--orange); height: 14px; cursor: pointer; flex: 1; }
+
+/* ZOOM */
+#sm-zoom-row { display: flex; gap: 5px; }
+#sm-zoom-row button { flex: 1; font-size: 13px; padding: 4px; }
+
+/* SELECTION INFO */
+#sm-sel-info { display: flex; flex-direction: column; gap: 4px; }
+.sm-info-row { display: flex; justify-content: space-between; font-size: 10px; }
+.sm-info-lbl { color: var(--dim); }
+.sm-info-val { color: var(--text); letter-spacing: 1px; }
+
+/* PITCH */
+#sm-pitch-box {
+    background: #080808; border: 1px solid var(--border);
+    padding: 10px; text-align: center; display: flex;
+    flex-direction: column; gap: 4px;
+}
+#sm-note-big { font-size: 28px; color: var(--orange); letter-spacing: 3px; font-weight: bold; }
+#sm-note-freq { font-size: 10px; color: var(--dim); letter-spacing: 1px; }
+#sm-note-cents {
+    font-size: 10px; letter-spacing: 1px;
+}
+#sm-pitch-bar-wrap {
+    height: 4px; background: #1a1a1a; border-radius: 2px; position: relative; margin: 2px 0;
+}
+#sm-pitch-bar {
+    position: absolute; top: 0; height: 100%;
+    width: 3px; background: var(--orange); border-radius: 2px;
+    left: 50%; transform: translateX(-50%);
+    transition: left 0.2s;
+}
+#sm-pitch-center { position: absolute; top: -2px; left: 50%; width: 1px; height: 8px; background: #333; }
+
+/* TUNING */
+#sm-tune-wrap { display: flex; flex-direction: column; gap: 5px; }
+#sm-tune-row { display: flex; align-items: center; gap: 6px; }
+#sm-tune-slider { accent-color: var(--orange); flex: 1; height: 14px; cursor: pointer; }
+#sm-tune-val { font-size: 10px; color: var(--orange); min-width: 36px; text-align: right; letter-spacing: 1px; }
+#sm-tune-btns { display: flex; gap: 5px; }
+#sm-tune-btns button { flex: 1; font-size: 10px; padding: 4px; }
+#sm-btn-autotune { color: var(--orange); border-color: #7a4010; }
+#sm-btn-tune-reset { color: var(--dim); }
+
+/* EDIÇÕES */
+#sm-edits { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+#sm-edits button { font-size: 10px; padding: 6px 4px; letter-spacing: 0.5px; }
+
+/* MIDI PREP */
+#sm-btn-midi {
+    width: 100%; color: #70d870;
+    border-color: #1a4a1a; font-size: 12px; padding: 10px;
+    letter-spacing: 1px;
+}
+#sm-btn-midi:hover { background: #0a1f0a; color: #90f090; }
+
+/* EXPORT */
+#sm-btn-export {
+    width: 100%; color: var(--accent);
+    border-color: #1a3050; font-size: 12px; padding: 8px;
+}
+
+/* SERVER INFO BOX */
+#sm-srv-info {
+    display: none; background: #150a00; border: 1px solid #7a4010;
+    padding: 8px; font-size: 10px; color: #c08040; line-height: 1.8;
+    letter-spacing: 0.5px;
+}
+
+/* ATALHOS */
+#sm-shortcuts { display: flex; flex-direction: column; gap: 3px; }
+.sm-shortcut { display: flex; justify-content: space-between; font-size: 10px; color: #444; }
+.sm-shortcut kbd { color: #555; font-family: var(--font); }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #2a2a2a; }
+
+/* BPM / GRID */
+#sm-bpm-section { display: flex; flex-direction: column; gap: 5px; }
+#sm-bpm-top { display: flex; align-items: center; gap: 5px; }
+#sm-bpm-val { color: var(--orange); font-size: 15px; letter-spacing: 2px; min-width: 44px; }
+#sm-bpm-input {
+    width: 58px; background: var(--bg2); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--font); font-size: 10px;
+    padding: 3px 5px; outline: none;
+}
+#sm-bpm-input:focus { border-color: var(--orange); }
+#sm-bpm-input::-webkit-inner-spin-button { opacity: 0.5; }
+#sm-btn-bpm { width: 100%; font-size: 10px; padding: 5px; color: var(--yellow); border-color: #4a4000; }
+#sm-btn-bpm:hover { background: #1a1500; }
+#sm-btn-tap { font-size: 10px; padding: 3px 7px; color: var(--dim); }
+#sm-grid-controls { display: flex; gap: 5px; align-items: center; }
+#sm-btn-snap { flex: 1; font-size: 10px; padding: 4px; color: var(--dim); }
+#sm-btn-snap.active { color: var(--orange); border-color: #7a4010; background: #251505; }
+#sm-grid-subdiv {
+    background: var(--bg2); border: 1px solid var(--border);
+    color: var(--dim); font-family: var(--font); font-size: 10px;
+    padding: 3px 5px; cursor: pointer; outline: none;
+}
+#sm-grid-subdiv:focus { border-color: var(--orange); }
+
+/* TABS / CLIPS */
+#sm-tabs {
+    display: flex; align-items: flex-end; gap: 2px;
+    padding: 5px 8px 0; background: #060606;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0; overflow-x: auto; min-height: 30px;
+}
+#sm-tabs::-webkit-scrollbar { height: 3px; }
+.sm-tab {
+    padding: 4px 12px; font-size: 10px; font-family: var(--font);
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--dim); cursor: pointer; letter-spacing: 1px;
+    border-bottom: none; white-space: nowrap; outline: none;
+    border-radius: 2px 2px 0 0;
+}
+.sm-tab:hover { color: var(--text); }
+.sm-tab.active {
+    background: #0c0c0c; color: var(--orange);
+    border-color: var(--orange); border-bottom-color: #0c0c0c;
+}
+.sm-tab-x {
+    margin-left: 6px; color: #555; cursor: pointer; font-size: 11px;
+}
+.sm-tab-x:hover { color: var(--red); }
+#sm-btn-cut {
+    margin-left: auto; font-size: 10px; padding: 4px 10px;
+    color: var(--dim); background: var(--bg2); flex-shrink: 0;
+    border: 1px dashed var(--border); letter-spacing: 1px;
+    border-radius: 2px; cursor: pointer; outline: none;
+}
+#sm-btn-cut:hover { color: var(--orange); border-color: var(--orange); }
+#sm-btn-cut:disabled { opacity: 0.3; cursor: default; }
+#sm-btn-cut:disabled:hover { color: var(--dim); border-color: var(--border); }
+</style>
+</head>
+<body>
+
+<div id="sm-header">
+    <span class="sm-logo">SAMPLER</span>
+    <span id="sm-filename">nenhum arquivo</span>
+    <span id="sm-srv-dot"></span>
+    <span id="sm-srv-label">SERVIDOR</span>
+</div>
+
+<div id="sm-tabs"></div>
+
+<div id="sm-wave-wrap">
+    <canvas id="sm-ruler"></canvas>
+    <canvas id="sm-waveform"></canvas>
+    <canvas id="sm-overview"></canvas>
+    <div id="sm-wave-info">-- kHz · -- bit</div>
+</div>
+<div id="sm-time-tooltip"></div>
+
+<div id="sm-body">
+
+    <!-- LEFT -->
+    <aside id="sm-left">
+
+        <div class="sm-sec">ARQUIVO</div>
+        <div id="sm-drop">
+            <input type="file" accept="audio/*" id="sm-file-input">
+            <div class="sm-drop-text">
+                solte o áudio aqui<br>
+                <span style="font-size:9px;color:#333;">mp3 · wav · ogg · m4a · flac</span>
+            </div>
+        </div>
+
+        <div class="sm-sec">YOUTUBE</div>
+        <div id="sm-srv-info">
+            servidor offline.<br>
+            dê duplo clique em<br><strong>iniciar_sampler.bat</strong>
+        </div>
+        <div id="sm-url-row">
+            <input type="text" id="sm-url" placeholder="colar link do YouTube...">
+            <button id="sm-btn-fetch" onclick="fetchYoutube()">↓</button>
+        </div>
+        <div id="sm-progress-wrap"><div id="sm-progress"></div></div>
+
+        <div class="sm-sec">CONTROLES</div>
+        <div id="sm-controls">
+            <button id="sm-btn-play" onclick="togglePlay()" disabled>▶ TOCAR SELEÇÃO</button>
+            <button id="sm-btn-stop" onclick="stopPlay()" disabled>■ STOP</button>
+            <button id="sm-btn-loop" onclick="toggleLoop()" disabled>⟳ LOOP</button>
+            <div id="sm-time-display">--:--.-- / --:--.--</div>
+        </div>
+
+        <div class="sm-vol-row">
+            <span class="sm-lbl">VOL</span>
+            <input type="range" id="sm-vol" min="0" max="1" step="0.01" value="0.85">
+        </div>
+
+        <div class="sm-sec">ZOOM</div>
+        <div id="sm-zoom-row">
+            <button onclick="zoom(0.5)" title="zoom in">+</button>
+            <button onclick="zoom(2)"   title="zoom out">−</button>
+            <button onclick="resetView()" title="reset">⊡</button>
+        </div>
+
+        <div class="sm-sec">ATALHOS</div>
+        <div id="sm-shortcuts">
+            <div class="sm-shortcut"><span>play / pause</span><kbd>Space</kbd></div>
+            <div class="sm-shortcut"><span>stop</span><kbd>Esc</kbd></div>
+            <div class="sm-shortcut"><span>loop</span><kbd>L</kbd></div>
+            <div class="sm-shortcut"><span>sel. tudo</span><kbd>Ctrl+A</kbd></div>
+            <div class="sm-shortcut"><span>mover sel.</span><kbd>[ ]</kbd></div>
+            <div class="sm-shortcut"><span>mover ±1s</span><kbd>Shift+[ ]</kbd></div>
+            <div class="sm-shortcut"><span>encolher/expandir</span><kbd>, .</kbd></div>
+            <div class="sm-shortcut"><span>zoom +/−</span><kbd>+ −</kbd></div>
+            <div class="sm-shortcut"><span>zoom reset</span><kbd>0</kbd></div>
+            <div class="sm-shortcut"><span>exportar</span><kbd>E</kbd></div>
+            <div class="sm-shortcut"><span>cortar seleção</span><kbd>C</kbd></div>
+            <div class="sm-shortcut"><span>preparar MIDI</span><kbd>M</kbd></div>
+            <div class="sm-shortcut"><span>detectar BPM</span><kbd>B</kbd></div>
+            <div class="sm-shortcut"><span>snap grid</span><kbd>G</kbd></div>
+            <div class="sm-shortcut"><span>zoom região</span><kbd>dbl overview</kbd></div>
+        </div>
+
+    </aside>
+
+    <!-- RIGHT -->
+    <main id="sm-right">
+
+        <div class="sm-sec">SELEÇÃO</div>
+        <div id="sm-sel-info">
+            <div class="sm-info-row">
+                <span class="sm-info-lbl">INÍCIO</span>
+                <span class="sm-info-val" id="sm-sel-start">--:--.---</span>
+            </div>
+            <div class="sm-info-row">
+                <span class="sm-info-lbl">FIM</span>
+                <span class="sm-info-val" id="sm-sel-end">--:--.---</span>
+            </div>
+            <div class="sm-info-row">
+                <span class="sm-info-lbl">DURAÇÃO</span>
+                <span class="sm-info-val" id="sm-sel-dur">--:--.---</span>
+            </div>
+            <div class="sm-info-row">
+                <span class="sm-info-lbl">AMOSTRAS</span>
+                <span class="sm-info-val" id="sm-sel-smp">--</span>
+            </div>
+        </div>
+
+        <div class="sm-sec">GRADE / BPM</div>
+        <div id="sm-bpm-section">
+            <div id="sm-bpm-top">
+                <span class="sm-info-lbl">BPM</span>
+                <span id="sm-bpm-val">--</span>
+                <input type="number" id="sm-bpm-input" min="40" max="300" step="0.5" placeholder="manual" oninput="onBPMInput(this)">
+                <button id="sm-btn-tap" onclick="tapTempo()">TAP</button>
+            </div>
+            <button id="sm-btn-bpm" onclick="detectBPM()" disabled>⟳ DETECTAR BPM</button>
+            <div id="sm-grid-controls">
+                <button id="sm-btn-snap" onclick="toggleSnap()">SNAP: OFF</button>
+                <select id="sm-grid-subdiv" onchange="setSnapBeats(+this.value)">
+                    <option value="0.25">¼ beat</option>
+                    <option value="0.5">½ beat</option>
+                    <option value="1" selected>1 beat</option>
+                    <option value="2">2 beats</option>
+                    <option value="4">4 beats</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="sm-sec">NOTA DETECTADA</div>
+        <div id="sm-pitch-box">
+            <div id="sm-note-big">--</div>
+            <div id="sm-note-freq">-- Hz</div>
+            <div id="sm-pitch-bar-wrap">
+                <div id="sm-pitch-center"></div>
+                <div id="sm-pitch-bar"></div>
+            </div>
+            <div id="sm-note-cents">-- cents</div>
+        </div>
+        <button onclick="detectPitch()" disabled id="sm-btn-detect" style="width:100%;font-size:10px;padding:5px;">
+            ⟳ DETECTAR NOTA DA SELEÇÃO
+        </button>
+
+        <div class="sm-sec">AFINAÇÃO</div>
+        <div id="sm-tune-wrap">
+            <div id="sm-tune-row">
+                <span class="sm-lbl">DETUNE</span>
+                <input type="range" id="sm-tune-slider" min="-100" max="100" step="1" value="0" oninput="setTuning(+this.value)">
+                <span id="sm-tune-val">0¢</span>
+            </div>
+            <div id="sm-tune-btns">
+                <button id="sm-btn-autotune" onclick="autoTune()" disabled>⊕ AUTO</button>
+                <button id="sm-btn-tune-reset" onclick="setTuning(0)">⊖ RESET</button>
+            </div>
+        </div>
+
+        <div class="sm-sec">EDIÇÕES</div>
+        <div id="sm-edits">
+            <button onclick="editNormalize()" disabled id="sm-e-norm">NORMALIZAR</button>
+            <button onclick="editReverse()"   disabled id="sm-e-rev">REVERSO</button>
+            <button onclick="editFadeIn()"    disabled id="sm-e-fi">FADE IN</button>
+            <button onclick="editFadeOut()"   disabled id="sm-e-fo">FADE OUT</button>
+            <button onclick="editSilence()"   disabled id="sm-e-sil">SILENCE</button>
+            <button onclick="editTrimToSel()" disabled id="sm-e-trim">TRIM</button>
+        </div>
+
+        <div class="sm-sec">MIDI</div>
+        <button id="sm-btn-midi" onclick="prepareForMidi()" disabled
+            title="Trim · Fade · Normalize · Auto-tune · Exporta com nome da nota">
+            ⊕ PREPARAR PARA MIDI
+        </button>
+        <div id="sm-midi-hint" style="font-size:9px;color:#444;letter-spacing:0.5px;line-height:1.7;">
+            trim silêncio · fade 5/30ms · normalize · auto-tune · exporta <em>nome_nota.wav</em>
+        </div>
+
+        <div class="sm-sec">EXPORTAR</div>
+        <button id="sm-btn-export" onclick="exportWAV()" disabled>↓ EXPORTAR SELEÇÃO COMO WAV</button>
+
+    </main>
+
+</div>
+
+<script src="sampler.js"></script>
+</body>
+</html>
