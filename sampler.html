@@ -290,8 +290,18 @@ button:disabled:hover { background: var(--bg3); color: var(--text); }
 #sm-btn-cut:disabled { opacity: 0.3; cursor: default; }
 #sm-btn-cut:disabled:hover { color: var(--dim); border-color: var(--border); }
 </style>
+<link rel="stylesheet" href="nav.css">
 </head>
-<body>
+<body class="has-global-nav">
+
+<nav class="global-nav">
+    <span class="global-nav-title">AUDIO TOOLS</span>
+    <a href="index.html">TRACKER</a>
+    <a class="active" href="sampler.html">SAMPLER</a>
+    <a href="midi.html">MIDI</a>
+    <a href="analyze.html">ANALYZE</a>
+    <a href="synth.html">SYNTH</a>
+</nav>
 
 <div id="sm-header">
     <span class="sm-logo">SAMPLER</span>

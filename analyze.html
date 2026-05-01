@@ -225,9 +225,19 @@
         .az-sel option { background: #141414; }
 
         #az-analyzing { font-size:11px; color:var(--accent); letter-spacing:2px; padding:4px 0; display:none; flex-shrink:0; }
-    </style>
+</style>
+<link rel="stylesheet" href="nav.css">
 </head>
-<body>
+<body class="has-global-nav">
+
+<nav class="global-nav">
+    <span class="global-nav-title">AUDIO TOOLS</span>
+    <a href="index.html">TRACKER</a>
+    <a href="sampler.html">SAMPLER</a>
+    <a href="midi.html">MIDI</a>
+    <a class="active" href="analyze.html">ANALYZE</a>
+    <a href="synth.html">SYNTH</a>
+</nav>
 
 <header id="az-header">
     <div class="az-logo">▓ SAMPLE ANALYZER</div>

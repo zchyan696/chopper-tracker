@@ -67,5 +67,5 @@ server.listen(PORT, '127.0.0.1', () => {
     console.log('  Deixe esta janela aberta enquanto usar o tracker.');
     console.log('  Feche para parar o servidor.');
     console.log('');
-    require('child_process').exec(`start http://localhost:${PORT}`);
+    console.log(`  Abra no navegador: http://localhost:${PORT}`);
 });

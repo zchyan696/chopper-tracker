@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI ROOM</title>
+    <link rel="stylesheet" href="nav.css">
+    <link rel="stylesheet" href="midi.css">
+</head>
+<body class="has-global-nav">
+<nav class="global-nav">
+    <span class="global-nav-title">AUDIO TOOLS</span>
+    <a href="index.html">TRACKER</a>
+    <a href="sampler.html">SAMPLER</a>
+    <a class="active" href="midi.html">MIDI</a>
+    <a href="analyze.html">ANALYZE</a>
+    <a href="synth.html">SYNTH</a>
+</nav>
+<div id="midi-app">
+    <header id="midi-header">
+        <div class="midi-logo">MIDI ROOM</div>
+        <div id="midi-status">pronto</div>
+        <div class="midi-header-actions">
+            <button id="btn-midi-play">PLAY</button>
+            <button id="btn-midi-loop">LOOP OFF</button>
+            <button id="btn-midi-record">REC</button>
+            <button id="btn-midi-clear">CLEAR</button>
+            <button id="btn-midi-export">EXPORT MIDI</button>
+        </div>
+    </header>
+
+    <main id="midi-main">
+        <aside id="midi-sidebar">
+            <section class="midi-block">
+                <div class="midi-block-title">ESCALA</div>
+                <label class="midi-field">
+                    <span>ROOT</span>
+                    <select id="midi-root"></select>
+                </label>
+                <label class="midi-field">
+                    <span>SCALE</span>
+                    <select id="midi-scale"></select>
+                </label>
+                <label class="midi-field">
+                    <span>OCTAVE</span>
+                    <input type="number" id="midi-octave" min="1" max="7" value="4">
+                </label>
+                <label class="midi-field">
+                    <span>BPM</span>
+                    <input type="number" id="midi-bpm" min="40" max="300" value="174">
+                </label>
+                <div class="midi-mode-switch">
+                    <button id="btn-mode-chromatic" class="midi-mode-btn active" type="button">CHROMATIC</button>
+                    <button id="btn-mode-scale" class="midi-mode-btn" type="button">SCALE LINE</button>
+                </div>
+            </section>
+
+            <section class="midi-block">
+                <div class="midi-block-title">TAKE</div>
+                <div id="midi-take-info">nenhuma nota gravada</div>
+                <div id="midi-summary">
+                    <div><span class="dim">notes</span><span id="midi-note-count">0</span></div>
+                    <div><span class="dim">length</span><span id="midi-length">0.00s</span></div>
+                </div>
+                <div id="midi-selection-info">sem selecao</div>
+                <div id="midi-step-info">cursor 0.00s</div>
+                <div id="midi-edit-info">pronto</div>
+            </section>
+
+            <section class="midi-block">
+                <div class="midi-block-title">RECORD</div>
+                <label class="midi-field">
+                    <span>COUNT-IN</span>
+                    <select id="midi-count-in">
+                        <option value="1">1 beat</option>
+                        <option value="2">2 beats</option>
+                        <option value="4" selected>4 beats</option>
+                        <option value="8">8 beats</option>
+                    </select>
+                </label>
+                <div class="midi-mode-switch">
+                    <button id="btn-metronome" class="midi-mode-btn active" type="button">CLICK ON</button>
+                    <button id="btn-ref-monitor" class="midi-mode-btn active" type="button">REF ON</button>
+                </div>
+                <div id="midi-record-help">
+                    <div><span class="keys">REC</span> faz pre-count antes de gravar</div>
+                    <div>click segue durante a gravação</div>
+                    <div>referencia toca junto, mas exporta so o MIDI</div>
+                </div>
+            </section>
+
+            <section class="midi-block">
+                <div class="midi-block-title">KEYBOARD</div>
+                <div id="midi-live-note">
+                    <span class="dim">current</span>
+                    <span id="midi-live-note-name">--</span>
+                </div>
+                <div id="midi-help">
+                    <div><span id="midi-help-primary" class="keys">A W S E D F T G Y H U J K O L P ; '</span></div>
+                    <div><span id="midi-help-secondary" class="keys">white + black keys em duas linhas</span></div>
+                    <div id="midi-help-caption">modo piano cromatico</div>
+                    <div><span class="keys">Z / X</span> oitava - / +</div>
+                </div>
+                <div id="midi-key-map"></div>
+            </section>
+
+            <section class="midi-block">
+                <div class="midi-block-title">GRID</div>
+                <div id="midi-grid-help">
+                    <div><span class="keys">SPACE</span> play / stop</div>
+                    <div>duplo clique no grid cria nota</div>
+                    <div>arraste a nota para mover</div>
+                    <div>arraste a borda direita para esticar</div>
+                    <div>shift + arraste no grid cria selecao</div>
+                    <div>REC com selecao = regravar so a regiao</div>
+                    <div><span class="keys">DEL</span> apaga nota selecionada</div>
+                </div>
+            </section>
+
+            <section class="midi-block">
+                <div class="midi-block-title">WRITE</div>
+                <div class="midi-mode-switch midi-snap-row">
+                    <button id="btn-snap-8" class="midi-snap-btn" type="button">1/8</button>
+                    <button id="btn-snap-16" class="midi-snap-btn active" type="button">1/16</button>
+                    <button id="btn-snap-32" class="midi-snap-btn" type="button">1/32</button>
+                </div>
+                <div class="midi-mode-switch">
+                    <button id="btn-step-input" class="midi-mode-btn" type="button">STEP OFF</button>
+                    <button id="btn-quantize" type="button">QUANTIZE</button>
+                </div>
+                <div class="midi-mode-switch">
+                    <button id="btn-transpose-down" type="button">-12</button>
+                    <button id="btn-transpose-up" type="button">+12</button>
+                </div>
+                <div class="midi-mode-switch">
+                    <button id="btn-dup-down" type="button">DUP -12</button>
+                    <button id="btn-dup-up" type="button">DUP +12</button>
+                </div>
+                <div class="midi-mode-switch">
+                    <button id="btn-copy" type="button">COPY</button>
+                    <button id="btn-paste" type="button">PASTE</button>
+                </div>
+                <div class="midi-mode-switch">
+                    <button id="btn-duplicate-block" type="button">DUP BLOCK</button>
+                    <button id="btn-delete-selected" type="button">DELETE</button>
+                </div>
+                <div id="midi-write-help">
+                    <div><span class="keys">, / .</span> cursor - / +</div>
+                    <div><span class="keys">CTRL+C / CTRL+V / CTRL+D</span> bloco</div>
+                    <div>step input escreve em 1/16</div>
+                    <div>acoes usam nota, selecao ou take inteiro</div>
+                </div>
+            </section>
+
+            <section class="midi-block">
+                <div class="midi-block-title">REFERENCE</div>
+                <div class="midi-inline-row">
+                    <span id="midi-srv-dot" class="srv-dot off"></span>
+                    <span id="midi-srv-text">server offline</span>
+                </div>
+                <label class="midi-field">
+                    <span>YOUTUBE URL</span>
+                    <input type="text" id="midi-ref-url" placeholder="cole o link do YouTube">
+                </label>
+                <div class="midi-mode-switch">
+                    <button id="btn-ref-import" type="button">IMPORT REF</button>
+                    <button id="btn-ref-clear" type="button">CLEAR REF</button>
+                </div>
+                <div class="midi-mode-switch">
+                    <button id="btn-ref-play" type="button">PLAY REF</button>
+                    <button id="btn-ref-slice" type="button">PLAY SLICE</button>
+                </div>
+                <div class="midi-mode-switch">
+                    <button id="btn-ref-detect-note" type="button">DETECT NOTE</button>
+                    <button id="btn-ref-use-slice" type="button">SLICE -> LOOP</button>
+                </div>
+                <div id="midi-ref-info">
+                    <div id="midi-ref-name">sem referencia</div>
+                    <div id="midi-ref-analysis">bpm -- · slice -- · note --</div>
+                </div>
+            </section>
+        </aside>
+
+        <section id="midi-stage">
+            <div id="midi-topbar">
+                <div class="metric"><span class="dim">root</span><span id="midi-root-view">C</span></div>
+                <div class="metric"><span class="dim">scale</span><span id="midi-scale-view">MAJOR</span></div>
+                <div class="metric"><span class="dim">oct</span><span id="midi-octave-view">4</span></div>
+                <div class="metric"><span class="dim">bpm</span><span id="midi-bpm-view">174</span></div>
+                <div class="metric"><span class="dim">ref bpm</span><span id="midi-ref-bpm-view">--</span></div>
+                <div class="metric"><span class="dim">slice note</span><span id="midi-ref-key-view">--</span></div>
+                <div id="midi-view-tools">
+                    <button id="btn-view-minus" type="button">ZOOM -</button>
+                    <button id="btn-view-plus" type="button">ZOOM +</button>
+                    <button id="btn-view-fit" type="button">FIT</button>
+                </div>
+            </div>
+            <div id="midi-ref-tabs"></div>
+            <div id="midi-ref-wrap">
+                <canvas id="midi-reference"></canvas>
+            </div>
+            <div id="midi-ref-overview-wrap">
+                <canvas id="midi-ref-overview"></canvas>
+            </div>
+            <div id="midi-roll-wrap">
+                <canvas id="midi-roll"></canvas>
+            </div>
+            <div id="midi-piano-wrap">
+                <div id="midi-piano"></div>
+            </div>
+        </section>
+    </main>
+</div>
+<script src="midi.js"></script>
+</body>
+</html>

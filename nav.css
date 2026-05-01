@@ -1,0 +1,60 @@
+.global-nav {
+    height: 34px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: #050505;
+    border-bottom: 1px solid #252525;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+
+.global-nav-title {
+    color: #e05050;
+    font-weight: bold;
+    margin-right: 10px;
+    white-space: nowrap;
+}
+
+.global-nav a {
+    color: #777;
+    text-decoration: none;
+    border: 1px solid #252525;
+    background: #141414;
+    padding: 3px 9px;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+.global-nav a:hover {
+    color: #fff;
+    border-color: #444;
+    background: #1d1d1d;
+}
+
+.global-nav a.active {
+    color: #e8e040;
+    border-color: #4a4a20;
+    background: #1c1c10;
+}
+
+body.has-global-nav #app,
+body.has-global-nav #midi-app {
+    height: calc(100vh - 34px);
+}
+
+@media (max-width: 720px) {
+    .global-nav {
+        overflow-x: auto;
+    }
+
+    .global-nav-title {
+        position: sticky;
+        left: 0;
+        background: #050505;
+        padding-right: 8px;
+    }
+}

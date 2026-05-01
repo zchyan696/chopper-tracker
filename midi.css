@@ -1,0 +1,532 @@
+:root {
+    --bg: #091018;
+    --bg2: #0f1722;
+    --bg3: #151f2d;
+    --line: #233041;
+    --text: #d8e2ee;
+    --dim: #708198;
+    --accent: #4a90d9;
+    --hot: #e05050;
+    --warn: #e8e040;
+    --paper: #f2f1eb;
+    --ink: #111318;
+    --font: "Courier New", Courier, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+    height: 100%;
+    background:
+        radial-gradient(circle at top, rgba(74, 144, 217, 0.16), transparent 35%),
+        linear-gradient(135deg, #060b11, #0b121b 45%, #081018);
+    color: var(--text);
+    font-family: var(--font);
+    overflow: hidden;
+}
+
+button, input, select {
+    font-family: inherit;
+}
+
+#midi-app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+#midi-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(7, 10, 15, 0.92);
+}
+
+.midi-logo {
+    color: #f0a050;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+
+#midi-status {
+    flex: 1;
+    color: var(--dim);
+    font-size: 11px;
+}
+
+.midi-header-actions {
+    display: flex;
+    gap: 8px;
+}
+
+button {
+    border: 1px solid var(--line);
+    background: var(--bg3);
+    color: var(--text);
+    font-size: 11px;
+    padding: 6px 12px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #1a2839;
+}
+
+#btn-midi-record {
+    color: var(--hot);
+    border-color: #4a2020;
+}
+
+#btn-midi-record.active {
+    background: #3a1111;
+    color: #ffb4b4;
+}
+
+#btn-midi-export {
+    color: var(--accent);
+    border-color: #1a3050;
+}
+
+#btn-midi-play {
+    color: #70d870;
+    border-color: #2a4a2a;
+}
+
+#btn-midi-play.active {
+    background: #16321b;
+    color: #b8ffb8;
+}
+
+#btn-midi-loop {
+    color: #e8e040;
+    border-color: #4a4a20;
+}
+
+#btn-midi-loop.active {
+    background: #2f2d11;
+    color: #fff6a8;
+}
+
+#midi-main {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+#midi-sidebar {
+    width: 280px;
+    padding: 12px;
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    background: rgba(9, 14, 21, 0.84);
+}
+
+.midi-block {
+    border: 1px solid var(--line);
+    background: rgba(17, 24, 35, 0.9);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.midi-block-title {
+    color: var(--dim);
+    font-size: 10px;
+    letter-spacing: 2px;
+}
+
+.midi-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--dim);
+}
+
+.midi-field input,
+.midi-field select {
+    background: #0a0f16;
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+.midi-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    font-size: 11px;
+}
+
+#midi-take-info,
+#midi-help,
+#midi-grid-help,
+#midi-selection-info,
+#midi-step-info,
+#midi-write-help,
+#midi-edit-info,
+#midi-record-help,
+#midi-ref-info,
+#midi-key-map {
+    color: var(--text);
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+#midi-selection-info {
+    color: #9bb6d1;
+}
+
+#midi-step-info {
+    color: #8ed7ff;
+}
+
+#midi-edit-info {
+    color: #ffc98a;
+}
+
+.midi-mode-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.midi-snap-row {
+    grid-template-columns: 1fr 1fr 1fr;
+}
+
+.midi-mode-btn {
+    padding: 8px 10px;
+    letter-spacing: 1px;
+    color: var(--dim);
+}
+
+.midi-mode-btn.active {
+    color: #eef5fd;
+    border-color: var(--accent);
+    background: #18283b;
+}
+
+#btn-metronome.active,
+#btn-ref-monitor.active {
+    color: #eef5fd;
+    border-color: #3f6ea7;
+    background: #18304d;
+}
+
+#btn-step-input.active {
+    color: #eef5fd;
+    border-color: #3f6ea7;
+    background: #18304d;
+}
+
+.midi-snap-btn.active {
+    color: #eef5fd;
+    border-color: #4a90d9;
+    background: #18304d;
+}
+
+#midi-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+#midi-summary div {
+    border: 1px solid var(--line);
+    padding: 8px;
+    background: #0b1118;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.dim {
+    color: var(--dim);
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+
+.keys {
+    color: var(--warn);
+}
+
+#midi-live-note {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    background: #0b1118;
+}
+
+#midi-live-note-name {
+    color: #ffd27f;
+    font-size: 18px;
+    letter-spacing: 1px;
+}
+
+#midi-key-map {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 8px;
+}
+
+.midi-key-map-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.midi-key-map-item .key {
+    color: var(--warn);
+}
+
+.midi-key-map-item .note {
+    color: #9bb6d1;
+}
+
+.midi-inline-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+}
+
+.srv-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+}
+
+.srv-dot.on {
+    background: #5be16f;
+    box-shadow: 0 0 10px rgba(91,225,111,0.45);
+}
+
+.srv-dot.off {
+    background: #a34040;
+    box-shadow: 0 0 10px rgba(163,64,64,0.32);
+}
+
+#midi-ref-name {
+    color: #ffd79a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#midi-ref-analysis {
+    color: #9bb6d1;
+}
+
+#midi-stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+#midi-ref-wrap {
+    height: 110px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(8, 14, 21, 0.92);
+}
+
+#midi-ref-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(8, 14, 21, 0.96);
+    overflow-x: auto;
+}
+
+.midi-ref-tab {
+    border: 1px solid var(--line);
+    background: #111b28;
+    color: var(--text);
+    font-size: 11px;
+    padding: 5px 10px;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.midi-ref-tab.active {
+    border-color: var(--accent);
+    background: #1a2a3d;
+}
+
+.midi-ref-tab.cut {
+    color: #f0a050;
+    border-color: #4e3420;
+}
+
+.midi-ref-tab-x {
+    color: #aab8c8;
+    font-size: 11px;
+    line-height: 1;
+}
+
+.midi-ref-tab-x:hover {
+    color: #ffffff;
+}
+
+#midi-ref-overview-wrap {
+    height: 36px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(6, 11, 17, 0.92);
+}
+
+#midi-ref-overview {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: pointer;
+}
+
+#midi-reference {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: crosshair;
+}
+
+#midi-topbar {
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(10, 14, 20, 0.76);
+    flex-wrap: wrap;
+}
+
+.metric {
+    min-width: 90px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.metric span:last-child {
+    color: #edf4fb;
+    font-size: 13px;
+}
+
+#midi-view-tools {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+}
+
+#midi-roll-wrap {
+    flex: 1;
+    min-height: 220px;
+    padding: 12px;
+}
+
+#midi-roll {
+    width: 100%;
+    height: 100%;
+    display: block;
+    border: 1px solid var(--line);
+    background: #071019;
+    cursor: crosshair;
+}
+
+#midi-piano-wrap {
+    padding: 0 12px 12px;
+}
+
+#midi-piano {
+    position: relative;
+    height: 190px;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, #101720, #0a0f15);
+    overflow: hidden;
+    user-select: none;
+}
+
+.piano-key {
+    position: absolute;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    padding-bottom: 8px;
+    border: 1px solid #111;
+    cursor: pointer;
+    font-size: 10px;
+}
+
+.piano-note {
+    font-size: 10px;
+    line-height: 1;
+}
+
+.piano-keyhint {
+    margin-top: 4px;
+    font-size: 9px;
+    line-height: 1;
+    opacity: 0.75;
+}
+
+.piano-key.white {
+    height: 100%;
+    background: linear-gradient(180deg, #fcfcf7, #dfdfd6 72%, #c6c6bd);
+    color: var(--ink);
+    z-index: 1;
+}
+
+.piano-key.black {
+    height: 62%;
+    background: linear-gradient(180deg, #363c42, #08090b 76%);
+    color: #dfe7f0;
+    z-index: 2;
+}
+
+.piano-key.in-scale.white { background: linear-gradient(180deg, #f8f1d8, #e2d29e 72%, #c7b16a); }
+.piano-key.in-scale.black { background: linear-gradient(180deg, #78611f, #1b1407 76%); }
+.piano-key.root.white { background: linear-gradient(180deg, #ffdcb3, #f2ac63 72%, #ca6b2c); }
+.piano-key.root.black { background: linear-gradient(180deg, #d3853c, #371a08 76%); }
+.piano-key.active {
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,0.45), 0 0 18px rgba(74,144,217,0.25);
+}
+.piano-key.white.active { background: linear-gradient(180deg, #dff1ff, #76bef6 72%, #367dae); }
+.piano-key.black.active { background: linear-gradient(180deg, #94d4ff, #1e638e 76%); }
+
+@media (max-width: 900px) {
+    html, body {
+        overflow: auto;
+    }
+
+    #midi-main {
+        flex-direction: column;
+    }
+
+    #midi-sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+    }
+
+    #midi-roll-wrap {
+        min-height: 320px;
+    }
+}

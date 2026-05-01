@@ -1617,7 +1617,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            if (btn.dataset.tab === 'analyze') { window.open('analyze.html', '_blank'); return; }
+            if (btn.dataset.tab === 'analyze') { window.location.href = 'analyze.html'; return; }
+            if (btn.dataset.tab === 'midi')    { window.location.href = 'midi.html'; return; }
             switchTab(btn.dataset.tab);
         });
     });

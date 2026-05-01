@@ -345,9 +345,18 @@
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: var(--bg); }
         ::-webkit-scrollbar-thumb { background: #2a2a2a; }
-    </style>
+</style>
+<link rel="stylesheet" href="nav.css">
 </head>
-<body>
+<body class="has-global-nav">
+    <nav class="global-nav">
+        <span class="global-nav-title">AUDIO TOOLS</span>
+        <a href="index.html">TRACKER</a>
+        <a href="sampler.html">SAMPLER</a>
+        <a href="midi.html">MIDI</a>
+        <a href="analyze.html">ANALYZE</a>
+        <a class="active" href="synth.html">SYNTH</a>
+    </nav>
     <div id="sy-header">
         <span class="sy-logo">SYNTH</span>
         <span id="sy-status">pronto</span>
