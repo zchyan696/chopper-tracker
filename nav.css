@@ -1,10 +1,10 @@
 .global-nav {
-    height: 34px;
+    height: 38px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 4px 10px;
+    padding: 4px 14px;
     background: #050505;
     border-bottom: 1px solid #252525;
     font-family: 'Courier New', Courier, monospace;
@@ -15,7 +15,9 @@
 .global-nav-title {
     color: #e05050;
     font-weight: bold;
-    margin-right: 10px;
+    margin-right: 16px;
+    padding-right: 16px;
+    border-right: 1px solid #252525;
     white-space: nowrap;
 }
 
@@ -24,9 +26,10 @@
     text-decoration: none;
     border: 1px solid #252525;
     background: #141414;
-    padding: 3px 9px;
+    padding: 3px 10px;
     line-height: 1.4;
     white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
 .global-nav a:hover {
@@ -39,11 +42,12 @@
     color: #e8e040;
     border-color: #4a4a20;
     background: #1c1c10;
+    box-shadow: 0 1px 0 #e8e040 inset;
 }
 
 body.has-global-nav #app,
 body.has-global-nav #midi-app {
-    height: calc(100vh - 34px);
+    height: calc(100vh - 38px);
 }
 
 @media (max-width: 720px) {

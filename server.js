@@ -61,7 +61,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
     console.log('');
-    console.log('  ▓ AMEN TRACKER');
+    console.log('  ▓ CHOPPER TRACKER');
     console.log(`  http://localhost:${PORT}`);
     console.log('');
     console.log('  Deixe esta janela aberta enquanto usar o tracker.');

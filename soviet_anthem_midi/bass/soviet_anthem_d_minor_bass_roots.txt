@@ -1,0 +1,43 @@
+Soviet Anthem D minor bass roots
+BPM: 76
+Meter: 2/4
+Rule: one bass root per bar, aligned with harmony_blocks.
+
+01. Dm -> D2
+02. A7 -> A1
+03. Bb -> Bb1
+04. Gm -> G1
+05. Eo -> E1
+06. Gm -> G1
+07. A7 -> A1
+08. Dm -> D2
+09. Dm -> D2
+10. A7 -> A1
+11. Dm -> D2
+12. A7 -> A1
+13. Bb -> Bb1
+14. Gm -> G1
+15. Dm -> D2
+16. A7 -> A1
+17. F -> F1
+18. A7 -> A1
+19. Dm -> D2
+20. A7 -> A1
+21. Dm -> D2
+22. A7 -> A1
+23. Gm -> G1
+24. Dm -> D2
+25. Bb -> Bb1
+26. A7 -> A1
+27. Bb -> Bb1
+28. Gm -> G1
+29. Gm -> G1
+30. A7 -> A1
+31. Dm -> D2
+32. Dm -> D2
+33. Eo -> E1
+34. A7 -> A1
+35. Dm -> D2
+36. Bb -> Bb1
+37. A7 -> A1
+38. Dm -> D2

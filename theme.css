@@ -1,0 +1,410 @@
+:root {
+    --ct-bg: #0b0b0d;
+    --ct-bg-soft: #121115;
+    --ct-panel: #18161a;
+    --ct-panel-2: #211b20;
+    --ct-rail: #08080a;
+    --ct-line: #34292f;
+    --ct-line-soft: #241e23;
+    --ct-text: #ded8d2;
+    --ct-muted: #7f746e;
+    --ct-faint: #4d4541;
+    --ct-red: #b84a54;
+    --ct-red-hot: #e05b66;
+    --ct-rose: #d97983;
+    --ct-bone: #d8c4a7;
+    --ct-tan: #9b7357;
+    --ct-blue: #6fa2c7;
+    --ct-green: #7cc58b;
+    --ct-yellow: #d7bd64;
+    --ct-font: 'Courier New', Courier, monospace;
+
+    --bg: var(--ct-bg);
+    --bg2: var(--ct-bg-soft);
+    --bg3: var(--ct-panel);
+    --bg-beat: #171a1a;
+    --bg-selected: #35262e;
+    --bg-playing: #241f22;
+    --border: var(--ct-line);
+    --line: var(--ct-line);
+    --text: var(--ct-text);
+    --dim: var(--ct-muted);
+    --text-dim: var(--ct-muted);
+    --accent: var(--ct-red);
+    --hot: var(--ct-red-hot);
+    --warn: var(--ct-yellow);
+    --note: var(--ct-yellow);
+    --vol: var(--ct-green);
+    --fx: var(--ct-red-hot);
+    --logo: var(--ct-red-hot);
+    --font: var(--ct-font);
+}
+
+html,
+body {
+    background:
+        linear-gradient(180deg, rgba(184, 74, 84, 0.09), transparent 210px),
+        radial-gradient(circle at 90% 0%, rgba(216, 196, 167, 0.07), transparent 280px),
+        var(--ct-bg) !important;
+    color: var(--ct-text);
+}
+
+.global-nav {
+    height: 38px;
+    padding: 5px 14px;
+    background: #070708;
+    border-bottom: 1px solid var(--ct-line);
+    box-shadow: 0 1px 0 rgba(216, 196, 167, 0.04) inset;
+    gap: 5px;
+}
+
+.global-nav-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--ct-bone);
+    letter-spacing: 2px;
+    margin-right: 16px;
+    padding-right: 16px;
+    border-right: 1px solid var(--ct-line);
+}
+
+.global-nav-title::before {
+    content: "x";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 15px;
+    border: 1px solid var(--ct-red);
+    border-radius: 11px 11px 4px 4px;
+    background:
+        linear-gradient(180deg, rgba(216, 196, 167, 0.15), transparent),
+        #2a151c;
+    color: var(--ct-bone);
+    font-size: 10px;
+    font-weight: bold;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.global-nav a {
+    background: #131113;
+    border-color: var(--ct-line-soft);
+    color: var(--ct-muted);
+    border-radius: 4px;
+    padding: 4px 10px;
+}
+
+.global-nav a:hover {
+    color: var(--ct-text);
+    border-color: var(--ct-tan);
+    background: #1b171a;
+}
+
+.global-nav a.active {
+    color: var(--ct-bone);
+    border-color: var(--ct-red);
+    background: #2a171d;
+    box-shadow: 0 -2px 0 var(--ct-red) inset;
+}
+
+body.has-global-nav #app,
+body.has-global-nav #midi-app {
+    height: calc(100vh - 38px);
+}
+
+#toolbar,
+#midi-header,
+#sm-header,
+#az-header,
+#sy-header,
+#page-bar,
+#midi-topbar,
+#wf-modal-bar {
+    background: rgba(8, 8, 10, 0.96) !important;
+    border-color: var(--ct-line) !important;
+}
+
+.logo,
+.midi-logo,
+.sm-logo,
+.az-logo,
+.sy-logo {
+    color: var(--ct-bone) !important;
+    letter-spacing: 2px;
+}
+
+.logo::before,
+.midi-logo::before,
+.sm-logo::before,
+.az-logo::before,
+.sy-logo::before {
+    content: "";
+    display: inline-block;
+    width: 18px;
+    height: 11px;
+    margin-right: 8px;
+    border: 1px solid var(--ct-red);
+    border-radius: 9px 9px 3px 3px;
+    background: #2a151c;
+    vertical-align: -1px;
+}
+
+#main,
+#midi-main,
+#sm-body,
+#az-body,
+#sy-body {
+    background: transparent !important;
+}
+
+#panel-left,
+#midi-sidebar,
+#sm-left,
+#az-left,
+#sy-left,
+.midi-block,
+#kits-list,
+#sm-pitch-box,
+#sy-shortcuts {
+    background: rgba(18, 17, 21, 0.96) !important;
+    border-color: var(--ct-line) !important;
+}
+
+#panel-tracker,
+#midi-stage,
+#sm-right,
+#az-right,
+#sy-right {
+    background: rgba(11, 11, 13, 0.72) !important;
+}
+
+button,
+.page-btn,
+.arr-slot,
+.tab-btn,
+.midi-mode-btn,
+.midi-snap-btn,
+.sy-cat,
+.sy-mode,
+.sy-preset,
+#sm-btn-fetch,
+#sm-btn-cut {
+    border-color: var(--ct-line) !important;
+    background: var(--ct-panel) !important;
+    color: var(--ct-text);
+    border-radius: 4px;
+}
+
+button:hover,
+.page-btn:hover,
+.arr-slot:hover,
+.tab-btn:hover,
+.midi-mode-btn:hover,
+.midi-snap-btn:hover,
+.sy-cat:hover,
+.sy-mode:hover,
+.sy-preset:hover,
+#sm-btn-fetch:hover,
+#sm-btn-cut:hover {
+    background: var(--ct-panel-2) !important;
+    border-color: var(--ct-tan) !important;
+    color: #fff !important;
+}
+
+.tab-btn.active,
+.page-btn.active,
+.arr-slot.arr-active,
+.midi-mode-btn.active,
+.midi-snap-btn.active,
+.sy-cat.active,
+.sy-mode.active,
+.sy-preset.active {
+    color: var(--ct-bone) !important;
+    border-color: var(--ct-red) !important;
+    background: #2a171d !important;
+}
+
+#btn-play,
+#btn-midi-play,
+#sm-btn-play,
+#az-btn-play,
+#sy-btn-play {
+    color: var(--ct-green) !important;
+    border-color: rgba(124, 197, 139, 0.45) !important;
+}
+
+#btn-stop,
+#btn-midi-record,
+#sm-btn-stop,
+#az-btn-stop,
+#sy-btn-stop,
+#wf-modal-close {
+    color: var(--ct-red-hot) !important;
+    border-color: rgba(224, 91, 102, 0.45) !important;
+}
+
+#btn-export,
+#btn-export-arr,
+#btn-midi-export,
+#sm-btn-export,
+#az-btn-export,
+#sy-btn-export,
+#btn-load-proj,
+#btn-save-proj {
+    color: var(--ct-blue) !important;
+    border-color: rgba(111, 162, 199, 0.45) !important;
+}
+
+input,
+select,
+textarea,
+#kits-search,
+#sm-url,
+#sy-preset-name {
+    background: #100f12 !important;
+    border-color: var(--ct-line) !important;
+    color: var(--ct-text) !important;
+    border-radius: 4px;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+#kits-search:focus,
+#sm-url:focus,
+#sy-preset-name:focus {
+    border-color: var(--ct-red) !important;
+    outline: none;
+}
+
+input[type="range"] {
+    accent-color: var(--ct-red);
+}
+
+#waveform,
+#wf-canvas-big,
+#sm-waveform,
+#sm-overview,
+#sm-ruler,
+#az-waveform,
+#az-kb,
+#az-pianoroll,
+#midi-roll,
+#midi-reference,
+#midi-ref-overview,
+#sy-waveform,
+#sy-kb,
+#sy-loop-canvas {
+    background: #09090b !important;
+    border-color: var(--ct-line) !important;
+}
+
+#tracker-table thead tr th,
+#tracker-table tbody tr td,
+.chord-timeline,
+#az-chord-timeline,
+.chroma-bars,
+#az-chroma {
+    border-color: var(--ct-line-soft) !important;
+}
+
+#tracker-table thead tr th {
+    background: #09090b !important;
+}
+
+tr.row-beat {
+    background: #15171a !important;
+}
+
+tr.row-playing {
+    background: #2b2420 !important;
+}
+
+td.cell-selected {
+    background: #3a252d !important;
+    outline-color: var(--ct-red) !important;
+}
+
+td.cell-note,
+.slice-note,
+.ak-value,
+#az-key-name,
+#sm-note-big,
+#sy-note-indicator {
+    color: var(--ct-yellow) !important;
+}
+
+td.cell-vol,
+.cell-volcmd {
+    color: var(--ct-green) !important;
+}
+
+td.cell-fx,
+.fx-code {
+    color: var(--ct-red-hot) !important;
+}
+
+#dropzone,
+#sm-drop,
+#az-dropzone {
+    background: rgba(11, 11, 13, 0.52);
+    border-color: var(--ct-line) !important;
+    border-radius: 6px;
+}
+
+#dropzone:hover,
+#dropzone.drag-over,
+#sm-drop:hover,
+#sm-drop.over,
+#az-dropzone:hover,
+#az-dropzone.drag-over {
+    border-color: var(--ct-red) !important;
+}
+
+::-webkit-scrollbar-track {
+    background: #08080a !important;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #33272d !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #4a333a !important;
+}
+
+/* ── Sub-headers (Sampler / Analyze / Synth): barra de status, não header ── */
+#sm-header,
+#az-header,
+#sy-header {
+    padding: 4px 14px !important;
+    min-height: unset !important;
+    font-size: 11px;
+}
+
+.sm-logo,
+.az-logo,
+.sy-logo {
+    font-size: 11px !important;
+    letter-spacing: 1.5px !important;
+    opacity: 0.75;
+}
+
+/* ── Abas de link (MIDI ↗ e ANALYZE ↗) no painel do tracker ── */
+.tab-btn[data-tab="midi"],
+.tab-btn[data-tab="analyze"] {
+    color: var(--ct-blue) !important;
+    border-style: dashed !important;
+    border-color: var(--ct-line) !important;
+    background: transparent !important;
+    opacity: 0.8;
+}
+
+.tab-btn[data-tab="midi"]:hover,
+.tab-btn[data-tab="analyze"]:hover {
+    opacity: 1;
+    border-color: var(--ct-blue) !important;
+    background: rgba(111, 162, 199, 0.07) !important;
+}

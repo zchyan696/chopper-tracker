@@ -1,0 +1,43 @@
+Soviet Anthem D minor harmony blocks
+BPM: 76
+Meter: 2/4
+Rule: one chord per bar, all notes same length, no rhythm.
+
+01. Dm
+02. A7
+03. Bb
+04. Gm
+05. Eo
+06. Gm
+07. A7
+08. Dm
+09. Dm
+10. A7
+11. Dm
+12. A7
+13. Bb
+14. Gm
+15. Dm
+16. A7
+17. F
+18. A7
+19. Dm
+20. A7
+21. Dm
+22. A7
+23. Gm
+24. Dm
+25. Bb
+26. A7
+27. Bb
+28. Gm
+29. Gm
+30. A7
+31. Dm
+32. Dm
+33. Eo
+34. A7
+35. Dm
+36. Bb
+37. A7
+38. Dm
